@@ -72,15 +72,16 @@ func (m *Module) Stop(ctx context.Context) error {
 func (m *Module) Health() kernel.Health {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	met := map[string]any{"настроен": m.conf.In != "", "поднят": m.built}
 	switch {
 	case m.conf.In == "":
-		return kernel.Health{OK: true, Detail: "не настроен (chaff net up)"}
+		return kernel.Health{OK: true, Detail: "не настроен (chaff net up)", Metrics: met}
 	case m.lastErr != nil:
-		return kernel.Health{OK: false, Detail: "ошибка: " + m.lastErr.Error()}
+		return kernel.Health{OK: false, Detail: "ошибка: " + m.lastErr.Error(), Metrics: met}
 	case m.built:
-		return kernel.Health{OK: true, Detail: fmt.Sprintf("up %s (%s<->%s)", m.name(), m.conf.In, m.conf.Out)}
+		return kernel.Health{OK: true, Detail: fmt.Sprintf("up %s (%s<->%s)", m.name(), m.conf.In, m.conf.Out), Metrics: met}
 	default:
-		return kernel.Health{OK: false, Detail: "настроен, не поднят"}
+		return kernel.Health{OK: false, Detail: "настроен, не поднят", Metrics: met}
 	}
 }
 

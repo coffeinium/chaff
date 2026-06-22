@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -25,9 +26,26 @@ type moduleRow struct {
 	Health  healthDTO `json:"health"`
 }
 
+type bridgeDTO struct {
+	Running    bool   `json:"running"`
+	OK         bool   `json:"ok"`
+	Up         bool   `json:"up"`
+	Configured bool   `json:"configured"`
+	Detail     string `json:"detail"`
+}
+
 type statusDTO struct {
 	Modules    []moduleRow    `json:"modules"`
 	Indicators map[string]int `json:"indicators"`
+	Bridge     bridgeDTO      `json:"bridge"`
+}
+
+type hitRow struct {
+	TS        int64  `json:"ts"`
+	Layer     string `json:"layer"`
+	Indicator string `json:"indicator"`
+	SrcIP     string `json:"src_ip"`
+	Detail    string `json:"detail"`
 }
 
 type (
@@ -36,6 +54,7 @@ type (
 	modulesMsg    struct{ rows []moduleRow }
 	sourcesMsg    struct{ rows []model.SourceSpec }
 	indicatorsMsg struct{ rows []model.Indicator }
+	hitsMsg       struct{ rows []hitRow }
 	actionMsg     struct{ text string }
 )
 
@@ -111,6 +130,20 @@ func fetchIndicators(socket string, kind model.Kind) tea.Cmd {
 			return errMsg{err}
 		}
 		return indicatorsMsg{rows}
+	}
+}
+
+func fetchHits(socket string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := request(socket, ipc.Request{Cmd: "hits", Args: map[string]string{"limit": strconv.Itoa(limit)}})
+		if err != nil {
+			return errMsg{err}
+		}
+		var rows []hitRow
+		if err := decode(resp.Data, &rows); err != nil {
+			return errMsg{err}
+		}
+		return hitsMsg{rows}
 	}
 }
 

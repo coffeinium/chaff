@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -69,7 +70,22 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		return ipc.OK(map[string]any{
 			"modules":    moduleList(k),
 			"indicators": counts,
+			"bridge":     bridgeState(k),
 		})
+	})
+
+	srv.Handle("hits", func(req ipc.Request) ipc.Response {
+		limit := 100
+		if v := req.Arg("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		hits, err := st.RecentHits(limit)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(hits)
 	})
 
 	srv.Handle("module.ls", func(_ ipc.Request) ipc.Response {
@@ -280,6 +296,25 @@ type netController interface {
 	Configure(in, out, name string) error
 	Teardown() error
 	Status() string
+}
+
+func bridgeState(k *kernel.Kernel) map[string]any {
+	out := map[string]any{"running": false, "configured": false, "up": false, "ok": false}
+	m := runningModule(k, "bridge")
+	if m == nil {
+		return out
+	}
+	h := m.Health()
+	out["running"] = true
+	out["ok"] = h.OK
+	out["detail"] = h.Detail
+	if v, ok := h.Metrics["настроен"].(bool); ok {
+		out["configured"] = v
+	}
+	if v, ok := h.Metrics["поднят"].(bool); ok {
+		out["up"] = v
+	}
+	return out
 }
 
 func netCtl(k *kernel.Kernel) (netController, bool) {

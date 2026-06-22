@@ -11,6 +11,20 @@ import (
 )
 
 func cmdClient(argv []string) int {
+	jsonOut := false
+	filtered := argv[:0:0]
+	for _, a := range argv {
+		if a == "--json" {
+			jsonOut = true
+			continue
+		}
+		filtered = append(filtered, a)
+	}
+	argv = filtered
+	if len(argv) == 0 {
+		return errln("нет команды")
+	}
+
 	req, err := buildRequest(argv)
 	if err != nil {
 		return errln("%v", err)
@@ -22,7 +36,7 @@ func cmdClient(argv []string) int {
 	if !resp.OK {
 		return errln("%s", resp.Error)
 	}
-	printData(resp.Data)
+	render(argv[0], resp.Data, jsonOut)
 	return 0
 }
 
@@ -44,6 +58,13 @@ func buildRequest(argv []string) (ipc.Request, error) {
 			return ipc.Request{}, fmt.Errorf("использование: chaff test VALUE")
 		}
 		return ipc.Request{Cmd: "test", Args: map[string]string{"value": rest[0]}}, nil
+
+	case "hits":
+		args := map[string]string{}
+		if len(rest) > 0 {
+			args["limit"] = rest[0]
+		}
+		return ipc.Request{Cmd: "hits", Args: args}, nil
 
 	case "module":
 		if len(rest) < 1 {
