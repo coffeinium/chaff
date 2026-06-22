@@ -167,14 +167,35 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 	})
 
 	srv.Handle("net.up", func(req ipc.Request) ipc.Response {
-		return ipc.OK(fmt.Sprintf("заглушка: поднял бы мост %q <-> %q (data-plane ждёт verify)",
-			req.Arg("in"), req.Arg("out")))
+		bc, ok := netCtl(k)
+		if !ok {
+			return ipc.Err("модуль bridge выключен")
+		}
+		in, out := req.Arg("in"), req.Arg("out")
+		if in == "" || out == "" {
+			return ipc.Err("нужны --in IF и --out IF")
+		}
+		if err := bc.Configure(in, out, req.Arg("name")); err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(bc.Status())
 	})
 	srv.Handle("net.down", func(_ ipc.Request) ipc.Response {
-		return ipc.OK("заглушка: убрал бы мост")
+		bc, ok := netCtl(k)
+		if !ok {
+			return ipc.Err("модуль bridge выключен")
+		}
+		if err := bc.Teardown(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK("мост снят")
 	})
 	srv.Handle("net.status", func(_ ipc.Request) ipc.Response {
-		return ipc.OK("заглушка: мост (data-plane) ждёт verify")
+		bc, ok := netCtl(k)
+		if !ok {
+			return ipc.Err("модуль bridge выключен")
+		}
+		return ipc.OK(bc.Status())
 	})
 }
 
@@ -235,14 +256,15 @@ func testValue(k *kernel.Kernel, value string) ipc.Response {
 	})
 }
 
-// moduleList — все зарегистрированные модули с состоянием вкл/выкл, запущен ли и
-// здоровьем.
 func moduleList(k *kernel.Kernel) []map[string]any {
 	run := running(k)
 	var out []map[string]any
 	for _, name := range kernel.Registered() {
+		title, about := kernel.Describe(name)
 		entry := map[string]any{
 			"name":    name,
+			"title":   title,
+			"about":   about,
 			"enabled": k.Store.IsModuleEnabled(name),
 			"running": run[name],
 		}
@@ -252,6 +274,21 @@ func moduleList(k *kernel.Kernel) []map[string]any {
 		out = append(out, entry)
 	}
 	return out
+}
+
+type netController interface {
+	Configure(in, out, name string) error
+	Teardown() error
+	Status() string
+}
+
+func netCtl(k *kernel.Kernel) (netController, bool) {
+	if m := runningModule(k, "bridge"); m != nil {
+		if c, ok := m.(netController); ok {
+			return c, true
+		}
+	}
+	return nil, false
 }
 
 func running(k *kernel.Kernel) map[string]bool {
