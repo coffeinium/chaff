@@ -7,7 +7,6 @@ import (
 	"github.com/coffeinium/chaff/internal/model"
 )
 
-// AddSource регистрирует фид. column_map хранится как JSON.
 func (s *Store) AddSource(spec model.SourceSpec) (int64, error) {
 	cm, err := json.Marshal(spec.ColumnMap)
 	if err != nil {
@@ -23,7 +22,6 @@ func (s *Store) AddSource(spec model.SourceSpec) (int64, error) {
 	return res.LastInsertId()
 }
 
-// ListSources — все настроенные фиды.
 func (s *Store) ListSources() ([]model.SourceSpec, error) {
 	rows, err := s.db.Query(`SELECT id, name, adapter, uri, column_map, enabled FROM sources ORDER BY name`)
 	if err != nil {
@@ -33,7 +31,6 @@ func (s *Store) ListSources() ([]model.SourceSpec, error) {
 	return scanSources(rows)
 }
 
-// EnabledSources — фиды, которые можно синкать.
 func (s *Store) EnabledSources() ([]model.SourceSpec, error) {
 	rows, err := s.db.Query(`SELECT id, name, adapter, uri, column_map, enabled FROM sources WHERE enabled = 1 ORDER BY name`)
 	if err != nil {
@@ -43,7 +40,6 @@ func (s *Store) EnabledSources() ([]model.SourceSpec, error) {
 	return scanSources(rows)
 }
 
-// UpdateSourceStatus записывает результат синка.
 func (s *Store) UpdateSourceStatus(id int64, status string, count int, hash string) error {
 	_, err := s.db.Exec(`
 		UPDATE sources SET last_sync = ?, last_status = ?, last_count = ?, content_hash = ?

@@ -11,7 +11,6 @@ import (
 	"github.com/coffeinium/chaff/internal/store"
 )
 
-// Kernel держит модули и отдаёт им общие сервисы.
 type Kernel struct {
 	Config *config.Config
 	Log    *slog.Logger
@@ -19,15 +18,13 @@ type Kernel struct {
 	Bus    *bus.Bus
 
 	mu      sync.Mutex
-	running []Module // в порядке старта
+	running []Module
 }
 
 func New(cfg *config.Config, log *slog.Logger, st *store.Store, b *bus.Bus) *Kernel {
 	return &Kernel{Config: cfg, Log: log, Store: st, Bus: b}
 }
 
-// Boot создаёт все включённые модули (плюс их зависимости), упорядочивает и для
-// каждого зовёт Init и Start.
 func (k *Kernel) Boot(ctx context.Context) error {
 	want := make(map[string]bool)
 	for _, name := range Registered() {
@@ -84,7 +81,6 @@ func (k *Kernel) Boot(ctx context.Context) error {
 	return nil
 }
 
-// Shutdown останавливает модули в обратном порядке старта.
 func (k *Kernel) Shutdown(ctx context.Context) {
 	k.mu.Lock()
 	mods := append([]Module(nil), k.running...)
@@ -101,14 +97,12 @@ func (k *Kernel) Shutdown(ctx context.Context) {
 	}
 }
 
-// Running возвращает снимок запущенных модулей.
 func (k *Kernel) Running() []Module {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	return append([]Module(nil), k.running...)
 }
 
-// Enforcers — запущенные модули, реализующие Enforcer.
 func (k *Kernel) Enforcers() []Enforcer {
 	var es []Enforcer
 	for _, m := range k.Running() {
@@ -119,7 +113,6 @@ func (k *Kernel) Enforcers() []Enforcer {
 	return es
 }
 
-// SourceFor возвращает запущенный Source-модуль для нужного адаптера.
 func (k *Kernel) SourceFor(adapter string) (Source, bool) {
 	for _, m := range k.Running() {
 		if s, ok := m.(Source); ok && s.Adapter() == adapter {
@@ -129,8 +122,6 @@ func (k *Kernel) SourceFor(adapter string) (Source, bool) {
 	return nil, false
 }
 
-// Reconcile собирает желаемый Ruleset из стора и отдаёт его каждому включённому
-// энфорсеру. Зовётся из цикла apply и из команды apply.
 func (k *Kernel) Reconcile() error {
 	snap, err := k.Store.BuildRuleset()
 	if err != nil {

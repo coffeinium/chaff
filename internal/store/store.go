@@ -1,6 +1,3 @@
-// Пакет store — единственный источник правды: база SQLite, которой владеет
-// демон. Индикаторы, фиды, состояние модулей, кэш пассивного DNS и лог
-// срабатываний — всё здесь.
 package store
 
 import (
@@ -9,14 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite" // pure-Go драйвер, регистрирует "sqlite"
+	_ "modernc.org/sqlite"
 )
 
 type Store struct {
 	db *sql.DB
 }
 
-// Open открывает (создавая каталог и файл при необходимости) и мигрирует.
 func Open(path string) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -27,7 +23,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Один писатель — сериализуем, чтобы не ловить SQLITE_BUSY под демоном.
+
 	db.SetMaxOpenConns(1)
 	for _, pragma := range []string{
 		"PRAGMA journal_mode=WAL",

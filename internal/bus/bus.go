@@ -1,14 +1,10 @@
-// Пакет bus — крошечный in-process pub/sub, чтобы развязать модули. Например,
-// dnssnoop публикует найденные IP, а ipblock/apply на них реагируют — без
-// прямой связи между собой.
 package bus
 
 import "sync"
 
-// Топики между модулями.
 const (
-	TopicIPDiscovered = "ip.discovered" // payload: netip.Addr (от dnssnoop)
-	TopicReload       = "reload"        // payload: string-причина (триггер apply)
+	TopicIPDiscovered = "ip.discovered"
+	TopicReload       = "reload"
 )
 
 type Event struct {
@@ -25,7 +21,6 @@ func New() *Bus {
 	return &Bus{subs: make(map[string][]chan Event)}
 }
 
-// Subscribe возвращает буферизованный канал с событиями топика.
 func (b *Bus) Subscribe(topic string) <-chan Event {
 	ch := make(chan Event, 64)
 	b.mu.Lock()
@@ -34,8 +29,6 @@ func (b *Bus) Subscribe(topic string) <-chan Event {
 	return ch
 }
 
-// Publish доставляет неблокирующе: медленный подписчик теряет события, а не
-// тормозит публикатора.
 func (b *Bus) Publish(e Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()

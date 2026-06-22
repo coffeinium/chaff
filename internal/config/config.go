@@ -1,5 +1,3 @@
-// Пакет config — стартовые настройки из окружения. Тут только пути и уровень
-// лога; что включено и какие фиды — в сторе, чтобы был один источник правды.
 package config
 
 import (
@@ -8,10 +6,10 @@ import (
 )
 
 type Config struct {
-	DBPath     string // файл sqlite
-	SocketPath string // управляющий unix-сокет
-	LogLevel   string // debug|info|warn|error
-	NFQueueNum int    // номер очереди nftables для sniblock
+	DBPath     string
+	SocketPath string
+	LogLevel   string
+	NFQueueNum int
 }
 
 func Load() *Config {

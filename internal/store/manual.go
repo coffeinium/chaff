@@ -6,12 +6,8 @@ import (
 	"github.com/coffeinium/chaff/internal/model"
 )
 
-// ManualSourceID помечает индикаторы, заведённые руками (allowlist, ручные
-// блоки), в отличие от пришедших из фидов.
 const ManualSourceID = 0
 
-// AddManual добавляет/обновляет индикатор, заведённый оператором (например,
-// allow-исключение для легит-инфры). Пустой Kind определяется автоматически.
 func (s *Store) AddManual(value string, kind model.Kind, action model.Action) error {
 	if kind == model.KindUnknown {
 		kind = model.Classify(value)
@@ -25,7 +21,6 @@ func (s *Store) AddManual(value string, kind model.Kind, action model.Action) er
 	return err
 }
 
-// RemoveManual удаляет ручной индикатор по значению.
 func (s *Store) RemoveManual(value string) (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM indicators WHERE value = ? AND source_id = ?`, value, ManualSourceID)
 	if err != nil {
@@ -34,7 +29,6 @@ func (s *Store) RemoveManual(value string) (int64, error) {
 	return res.RowsAffected()
 }
 
-// ListManual — ручные индикаторы с заданным действием.
 func (s *Store) ListManual(action model.Action) ([]model.Indicator, error) {
 	rows, err := s.db.Query(`
 		SELECT id, value, kind, action, scope, threat, note, source_id,

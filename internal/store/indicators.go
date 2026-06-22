@@ -7,9 +7,6 @@ import (
 	"github.com/coffeinium/chaff/internal/model"
 )
 
-// UpsertIndicators добавляет или освежает индикаторы фида. Существующие строки
-// (то же value+kind+source) получают новый last_seen и метаданные и снова
-// включаются. Возвращает число записанных строк.
 func (s *Store) UpsertIndicators(sourceID int64, inds []model.Indicator) (int, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -58,7 +55,6 @@ func (s *Store) UpsertIndicators(sourceID int64, inds []model.Indicator) (int, e
 	return n, tx.Commit()
 }
 
-// ListByKind возвращает включённые непротухшие индикаторы заданного вида.
 func (s *Store) ListByKind(kind model.Kind) ([]model.Indicator, error) {
 	rows, err := s.db.Query(`
 		SELECT id, value, kind, action, scope, threat, note, source_id,
@@ -73,7 +69,6 @@ func (s *Store) ListByKind(kind model.Kind) ([]model.Indicator, error) {
 	return scanIndicators(rows)
 }
 
-// CountByKind — сколько включённых индикаторов по каждому виду.
 func (s *Store) CountByKind() (map[model.Kind]int, error) {
 	rows, err := s.db.Query(`SELECT kind, COUNT(1) FROM indicators WHERE enabled = 1 GROUP BY kind`)
 	if err != nil {
@@ -92,9 +87,6 @@ func (s *Store) CountByKind() (map[model.Kind]int, error) {
 	return out, rows.Err()
 }
 
-// BuildRuleset собирает желаемое состояние для энфорсеров. Строки allow уходят в
-// AllowSet, block/monitor — в типизированные списки. Хеши намеренно опускаем —
-// это не дело сетевого файрволла.
 func (s *Store) BuildRuleset() (model.Ruleset, error) {
 	rs := model.Ruleset{Allow: model.AllowSet{Domains: map[string]bool{}}}
 

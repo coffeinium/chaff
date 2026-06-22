@@ -22,10 +22,8 @@ func NewServer(path string, log *slog.Logger) *Server {
 	return &Server{path: path, log: log, mux: make(map[string]Handler)}
 }
 
-// Handle вешает обработчик на команду. На неизвестную команду — общая ошибка.
 func (s *Server) Handle(cmd string, h Handler) { s.mux[cmd] = h }
 
-// Listen занимает сокет, предварительно убрав старый.
 func (s *Server) Listen() error {
 	if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -38,7 +36,6 @@ func (s *Server) Listen() error {
 	return nil
 }
 
-// Serve принимает соединения, пока не отменят ctx.
 func (s *Server) Serve(ctx context.Context) {
 	go func() {
 		<-ctx.Done()

@@ -1,4 +1,3 @@
-// Пакет log — общий логгер процесса.
 package log
 
 import (

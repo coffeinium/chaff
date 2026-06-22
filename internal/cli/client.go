@@ -10,7 +10,6 @@ import (
 	"github.com/coffeinium/chaff/internal/ipc"
 )
 
-// cmdClient превращает argv в Request, шлёт демону и печатает ответ.
 func cmdClient(argv []string) int {
 	req, err := buildRequest(argv)
 	if err != nil {
@@ -88,7 +87,6 @@ func buildRequest(argv []string) (ipc.Request, error) {
 	}
 }
 
-// parseFlags понимает --key value, --key=value и голые позиционные аргументы.
 func parseFlags(args []string) (map[string]string, []string) {
 	flags := map[string]string{}
 	var pos []string
@@ -113,7 +111,6 @@ func parseFlags(args []string) (map[string]string, []string) {
 	return flags, pos
 }
 
-// parseColumnMap превращает "indicator:0,type:1,threat:2" в {indicator:0,...}.
 func parseColumnMap(s string) map[string]int {
 	out := map[string]int{}
 	if s == "" {

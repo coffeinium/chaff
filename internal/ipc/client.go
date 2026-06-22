@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// Call дозванивается до сокета демона, шлёт один запрос и возвращает ответ.
 func Call(socketPath string, req Request) (Response, error) {
 	conn, err := net.DialTimeout("unix", socketPath, 3*time.Second)
 	if err != nil {

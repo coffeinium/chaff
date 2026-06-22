@@ -69,9 +69,6 @@ func (s *Store) applyMigration(name, body string) error {
 	return tx.Commit()
 }
 
-// splitStatements выкидывает строки-комментарии "--" (в них бывает ';') и режет
-// остаток на отдельные стейтменты. В наших миграциях точки с запятой внутри
-// строковых литералов нет, так что это безопасно.
 func splitStatements(body string) []string {
 	var clean strings.Builder
 	for _, line := range strings.Split(body, "\n") {

@@ -2,8 +2,6 @@ package store
 
 import "github.com/coffeinium/chaff/internal/model"
 
-// Lookup — включённые индикаторы с точным совпадением значения. Нужен команде
-// test, чтобы объяснить, сработает ли значение и на каком слое.
 func (s *Store) Lookup(value string) ([]model.Indicator, error) {
 	rows, err := s.db.Query(`
 		SELECT id, value, kind, action, scope, threat, note, source_id,

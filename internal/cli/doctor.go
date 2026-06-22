@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-// cmdDoctor — preflight без демона: права, нужные модули ядра, бинарь nft и
-// видимые интерфейсы.
 func cmdDoctor(_ []string) int {
 	type check struct{ status, name, detail string }
 	var checks []check

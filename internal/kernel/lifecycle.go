@@ -5,11 +5,9 @@ import (
 	"sort"
 )
 
-// topoSort упорядочивает модули так, чтобы каждый стартовал после тех, что ему
-// нужны (Needs). Ошибка — на отсутствующую зависимость или цикл.
 func topoSort(inst map[string]Module) ([]string, error) {
 	indeg := make(map[string]int, len(inst))
-	deps := make(map[string][]string, len(inst)) // зависимость -> зависящие
+	deps := make(map[string][]string, len(inst))
 	for name := range inst {
 		if _, ok := indeg[name]; !ok {
 			indeg[name] = 0
@@ -23,7 +21,6 @@ func topoSort(inst map[string]Module) ([]string, error) {
 		}
 	}
 
-	// Алгоритм Кана; имена берём в отсортированном порядке для стабильного вывода.
 	var ready []string
 	for name, d := range indeg {
 		if d == 0 {

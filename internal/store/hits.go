@@ -10,7 +10,6 @@ type Hit struct {
 	Detail    string `json:"detail,omitempty"`
 }
 
-// AddHit дописывает событие срабатывания.
 func (s *Store) AddHit(h Hit) error {
 	if h.TS == 0 {
 		h.TS = time.Now().Unix()
@@ -21,7 +20,6 @@ func (s *Store) AddHit(h Hit) error {
 	return err
 }
 
-// RecentHits — последние срабатывания, свежие первыми.
 func (s *Store) RecentHits(limit int) ([]Hit, error) {
 	if limit <= 0 {
 		limit = 100
