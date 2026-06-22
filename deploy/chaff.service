@@ -11,6 +11,8 @@ EnvironmentFile=-/etc/chaff/chaff.env
 Restart=on-failure
 RestartSec=2
 
+ExecStopPost=-/usr/sbin/nft delete table inet chaff
+
 # Data-plane needs netfilter/bridge/NFQUEUE; not containerizable.
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
