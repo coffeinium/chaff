@@ -162,6 +162,17 @@ func toggleModule(socket, name string, enable bool) tea.Cmd {
 	}
 }
 
+func manualAction(socket, cmd, value string) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := request(socket, ipc.Request{Cmd: cmd, Args: map[string]string{"value": value}})
+		if err != nil {
+			return errMsg{err}
+		}
+		text, _ := resp.Data.(string)
+		return actionMsg{text}
+	}
+}
+
 func syncSources(socket string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := request(socket, ipc.Request{Cmd: "source.sync"})

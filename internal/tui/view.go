@@ -248,6 +248,10 @@ func actionStyled(a string) string {
 }
 
 func (m appModel) footer() string {
+	if m.action {
+		return helpStyle.Render("действие над ") + truncate(m.actionVal, 40) +
+			helpStyle.Render(":  b заблокировать · w разрешить · d снять ручное · esc отмена")
+	}
 	if m.search {
 		return helpStyle.Render("поиск: ") + m.query + helpStyle.Render("▏  enter — применить · esc — сброс")
 	}
@@ -259,9 +263,9 @@ func (m appModel) footer() string {
 	case viewSources:
 		keys = "↑↓ выбор · s загрузить · " + base
 	case viewIndicators:
-		keys = "←→ вид · ↑↓ листать · / поиск · " + base
+		keys = "←→ вид · ↑↓ листать · / поиск · enter действие · " + base
 	case viewHits:
-		keys = "↑↓ листать · " + base
+		keys = "↑↓ листать · enter действие · " + base
 	default:
 		keys = base
 	}
@@ -294,6 +298,8 @@ func (m appModel) helpScreen() string {
 		{"s / enter", "Списки: загрузить источники"},
 		{"← →", "Блокировки: сменить вид"},
 		{"/", "Блокировки: поиск, esc — сброс"},
+		{"enter", "Блокировки/Срабатывания: действие над значением"},
+		{"  b / w / d", "заблокировать / разрешить / снять ручное"},
 	}
 	for _, r := range keys {
 		if r[0] == "" {

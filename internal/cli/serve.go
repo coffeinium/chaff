@@ -178,6 +178,30 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		return ipc.OK(inds)
 	})
 
+	srv.Handle("block.add", func(req ipc.Request) ipc.Response {
+		v := req.Arg("value")
+		if v == "" {
+			return ipc.Err("использование: chaff block add VALUE")
+		}
+		if err := st.AddManual(v, model.KindUnknown, model.ActionBlock); err != nil {
+			return ipc.Err(err.Error())
+		}
+		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "block.add"})
+		return ipc.OK(fmt.Sprintf("block %q добавлен", v))
+	})
+	srv.Handle("block.rm", func(req ipc.Request) ipc.Response {
+		v := req.Arg("value")
+		if v == "" {
+			return ipc.Err("использование: chaff block rm VALUE")
+		}
+		n, err := st.RemoveManual(v)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "block.rm"})
+		return ipc.OK(fmt.Sprintf("удалено строк: %d", n))
+	})
+
 	srv.Handle("test", func(req ipc.Request) ipc.Response {
 		return testValue(k, req.Arg("value"))
 	})

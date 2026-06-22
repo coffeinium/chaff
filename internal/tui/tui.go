@@ -41,10 +41,12 @@ type appModel struct {
 	hits    []hitRow
 	indKind int
 
-	search   bool
-	query    string
-	showHelp bool
-	auto     bool
+	search    bool
+	query     string
+	showHelp  bool
+	auto      bool
+	action    bool
+	actionVal string
 
 	msg string
 	err string
@@ -75,7 +77,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tickMsg:
-		if m.auto && !m.search && !m.showHelp {
+		if m.auto && !m.search && !m.showHelp && !m.action {
 			return m, tea.Batch(m.refresh(), tick())
 		}
 		return m, tick()
@@ -118,6 +120,9 @@ func (m appModel) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.search {
 		return m.handleSearchKey(k)
+	}
+	if m.action {
+		return m.handleActionKey(k)
 	}
 
 	switch k.String() {
@@ -171,6 +176,11 @@ func (m appModel) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if k.String() == "s" || k.String() == "enter" {
 			return m, syncSources(m.socket)
 		}
+	case viewHits:
+		if k.String() == "enter" && m.cursor < len(m.hits) {
+			m.action, m.actionVal = true, m.hits[m.cursor].Indicator
+			return m, nil
+		}
 	case viewIndicators:
 		switch k.String() {
 		case "left", "h":
@@ -184,7 +194,33 @@ func (m appModel) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "/":
 			m.search = true
 			return m, nil
+		case "enter":
+			inds := m.filteredInds()
+			if m.cursor < len(inds) {
+				m.action, m.actionVal = true, inds[m.cursor].Value
+			}
+			return m, nil
 		}
+	}
+	return m, nil
+}
+
+func (m appModel) handleActionKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc", "q":
+		m.action = false
+		return m, nil
+	case "b":
+		m.action = false
+		return m, manualAction(m.socket, "block.add", m.actionVal)
+	case "w":
+		m.action = false
+		return m, manualAction(m.socket, "allow.add", m.actionVal)
+	case "d":
+		m.action = false
+		return m, manualAction(m.socket, "block.rm", m.actionVal)
 	}
 	return m, nil
 }
