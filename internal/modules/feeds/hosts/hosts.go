@@ -1,6 +1,3 @@
-// Пакет hosts — адаптер блоклистов формата hosts-файла (например,
-// "0.0.0.0 bad.com"). IP-приёмник отбрасываем, имя хоста становится доменным
-// индикатором.
 package hosts
 
 import (
@@ -22,11 +19,13 @@ type Module struct {
 
 func (m *Module) Name() string                    { return "feed-hosts" }
 func (m *Module) Needs() []string                 { return nil }
+func (m *Module) Title() string                   { return "Источник: hosts" }
+func (m *Module) About() string                   { return "загружает список из hosts-файла" }
 func (m *Module) Init(k *kernel.Kernel) error     { m.k = k; return nil }
 func (m *Module) Start(ctx context.Context) error { return nil }
 func (m *Module) Stop(ctx context.Context) error  { return nil }
 func (m *Module) Health() kernel.Health {
-	return kernel.Health{OK: true, Detail: "адаптер hosts-файла"}
+	return kernel.Health{OK: true, Detail: "готов"}
 }
 
 func (m *Module) Adapter() string { return "hosts" }
@@ -44,7 +43,7 @@ func (m *Module) Fetch(ctx context.Context, spec model.SourceSpec) ([]model.Indi
 		case 1:
 			host = fields[0]
 		default:
-			host = fields[1] // "<ip-приёмник> <host>"
+			host = fields[1]
 		}
 		if host == "" || host == "localhost" {
 			continue

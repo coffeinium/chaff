@@ -1,6 +1,3 @@
-// Пакет feedsync (имя модуля "sync") периодически тянет каждый включённый фид
-// через его адаптер, апсертит индикаторы и шлёт reload, чтобы apply пересобрал
-// data-plane.
 package feedsync
 
 import (
@@ -23,6 +20,10 @@ type Module struct {
 
 func (m *Module) Name() string    { return "sync" }
 func (m *Module) Needs() []string { return nil }
+func (m *Module) Title() string   { return "Обновление списков" }
+func (m *Module) About() string {
+	return "периодически тянет источники и обновляет блокировки"
+}
 func (m *Module) Init(k *kernel.Kernel) error {
 	m.k = k
 	return nil
@@ -50,7 +51,7 @@ func (m *Module) Stop(ctx context.Context) error {
 }
 
 func (m *Module) Health() kernel.Health {
-	return kernel.Health{OK: true, Detail: "планировщик фидов работает"}
+	return kernel.Health{OK: true, Detail: "работает по расписанию"}
 }
 
 func (m *Module) loop(ctx context.Context) {
@@ -69,8 +70,6 @@ func (m *Module) loop(ctx context.Context) {
 	}
 }
 
-// Run тянет все включённые фиды один раз. Вынесена наружу, чтобы команда
-// source.sync могла дёрнуть немедленный синк через работающий модуль.
 func Run(ctx context.Context, k *kernel.Kernel) (int, error) {
 	specs, err := k.Store.EnabledSources()
 	if err != nil {

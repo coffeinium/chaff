@@ -53,7 +53,7 @@ func (m appModel) body() string {
 
 func (m appModel) bodyStatus() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Индикаторы") + "\n")
+	b.WriteString(titleStyle.Render("Блокировки") + "\n")
 	if len(m.status.Indicators) == 0 {
 		b.WriteString(dimStyle.Render("  нет данных (r — обновить)") + "\n")
 	} else {
@@ -72,8 +72,8 @@ func (m appModel) bodyStatus() string {
 			running++
 		}
 	}
-	b.WriteString("\n" + titleStyle.Render("Модули") + "\n")
-	b.WriteString(fmt.Sprintf("  запущено %d из %d\n", running, len(m.status.Modules)))
+	b.WriteString("\n" + titleStyle.Render("Функции") + "\n")
+	b.WriteString(fmt.Sprintf("  работает %d из %d\n", running, len(m.status.Modules)))
 	return b.String()
 }
 
@@ -85,31 +85,45 @@ func (m appModel) bodyModules() string {
 	var b strings.Builder
 	for i := start; i < end; i++ {
 		row := m.modules[i]
-		state := offStyle.Render("off")
+		state := offStyle.Render("выкл")
 		if row.Enabled {
-			state = okStyle.Render("on ")
+			state = okStyle.Render("вкл ")
 		}
-		run := dimStyle.Render("·")
+		dot := dimStyle.Render("·")
 		if row.Running {
-			run = okStyle.Render("●")
+			dot = okStyle.Render("●")
 		}
-		line := fmt.Sprintf("%s%-12s %s %s %s", caret(i == m.cursor), row.Name, state, run, dimStyle.Render(row.Health.Detail))
+		title := row.Title
+		if title == "" {
+			title = row.Name
+		}
+		line := fmt.Sprintf("%s%-22s %s %s %s", caret(i == m.cursor), title, state, dot, dimStyle.Render(row.Health.Detail))
 		b.WriteString(emph(i == m.cursor, line) + "\n")
+	}
+	if sel := m.selectedModule(); sel != nil {
+		b.WriteString("\n" + dimStyle.Render("  "+sel.About+"  ·  "+sel.Name))
 	}
 	return b.String()
 }
 
+func (m appModel) selectedModule() *moduleRow {
+	if m.cursor >= 0 && m.cursor < len(m.modules) {
+		return &m.modules[m.cursor]
+	}
+	return nil
+}
+
 func (m appModel) bodySources() string {
 	if len(m.sources) == 0 {
-		return dimStyle.Render("  фидов нет — добавь: chaff source add ...")
+		return dimStyle.Render("  списков нет — добавьте: chaff source add ...")
 	}
 	start, end := m.window(len(m.sources))
 	var b strings.Builder
 	for i := start; i < end; i++ {
 		s := m.sources[i]
-		state := offStyle.Render("off")
+		state := offStyle.Render("выкл")
 		if s.Enabled {
-			state = okStyle.Render("on ")
+			state = okStyle.Render("вкл ")
 		}
 		line := fmt.Sprintf("%s%-14s %-7s %s %s", caret(i == m.cursor), s.Name, s.Adapter, state, dimStyle.Render(truncate(s.URI, 40)))
 		b.WriteString(emph(i == m.cursor, line) + "\n")
@@ -141,7 +155,7 @@ func (m appModel) footer() string {
 	case viewModules:
 		keys = "↑↓ выбор · space вкл/выкл · " + keys
 	case viewSources:
-		keys = "↑↓ выбор · s синк · " + keys
+		keys = "↑↓ выбор · s загрузить · " + keys
 	case viewIndicators:
 		keys = "←→ вид · ↑↓ прокрутка · " + keys
 	}
@@ -154,7 +168,6 @@ func (m appModel) footer() string {
 	return out
 }
 
-// window выбирает видимый диапазон строк так, чтобы курсор был на экране.
 func (m appModel) window(total int) (int, int) {
 	h := m.height - 8
 	if h < 3 {

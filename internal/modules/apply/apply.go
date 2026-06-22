@@ -1,6 +1,3 @@
-// Пакет apply сводит стор в data-plane: собирает желаемый Ruleset и отдаёт его
-// каждому включённому энфорсеру. Срабатывает по reload (от sync или CLI) и по
-// медленному страховочному тику.
 package apply
 
 import (
@@ -23,6 +20,10 @@ type Module struct {
 
 func (m *Module) Name() string    { return "apply" }
 func (m *Module) Needs() []string { return nil }
+func (m *Module) Title() string   { return "Применение правил" }
+func (m *Module) About() string {
+	return "переносит списки блокировки в сетевой фильтр"
+}
 func (m *Module) Init(k *kernel.Kernel) error {
 	m.k = k
 	return nil
@@ -50,7 +51,7 @@ func (m *Module) Stop(ctx context.Context) error {
 }
 
 func (m *Module) Health() kernel.Health {
-	return kernel.Health{OK: true, Detail: "цикл reconcile работает"}
+	return kernel.Health{OK: true, Detail: "работает"}
 }
 
 func (m *Module) loop(ctx context.Context) {
@@ -59,7 +60,6 @@ func (m *Module) loop(ctx context.Context) {
 	tick := time.NewTicker(5 * time.Minute)
 	defer tick.Stop()
 
-	// Стартовый reconcile, чтобы data-plane отражал БД сразу после загрузки.
 	m.reconcile("boot")
 
 	for {

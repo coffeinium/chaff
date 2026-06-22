@@ -1,6 +1,3 @@
-// Пакет model — общие типы, которые ходят между ядром, стором и модулями.
-// Сам ни от чего внутри chaff не зависит, поэтому его можно импортировать
-// откуда угодно без циклов.
 package model
 
 import (
@@ -9,8 +6,6 @@ import (
 	"strings"
 )
 
-// Kind — класс индикатора. Это стабильный контракт: форматы фидов приходят и
-// уходят, а виды остаются.
 type Kind string
 
 const (
@@ -23,7 +18,6 @@ const (
 	KindUnknown Kind = ""
 )
 
-// Action — что делаем с подходящим трафиком. allow сильнее block.
 type Action string
 
 const (
@@ -32,8 +26,6 @@ const (
 	ActionAllow   Action = "allow"
 )
 
-// Scope — весь домен или только конкретные пути. Легит-инфра (github.com) идёт
-// как path: домен живой, интересны лишь вредоносные URL.
 type Scope string
 
 const (
@@ -41,7 +33,6 @@ const (
 	ScopePath   Scope = "path"
 )
 
-// Indicator — строка source of truth.
 type Indicator struct {
 	ID        int64  `json:"id"`
 	Value     string `json:"value"`
@@ -51,25 +42,21 @@ type Indicator struct {
 	Threat    string `json:"threat,omitempty"`
 	Note      string `json:"note,omitempty"`
 	SourceID  int64  `json:"source_id"`
-	FirstSeen int64  `json:"first_seen"` // unix-секунды
+	FirstSeen int64  `json:"first_seen"`
 	LastSeen  int64  `json:"last_seen"`
-	ExpiresAt int64  `json:"expires_at"` // 0 = бессрочно
+	ExpiresAt int64  `json:"expires_at"`
 	Enabled   bool   `json:"enabled"`
 }
 
-// SourceSpec — настроенный фид. Адаптер (csv/fstec/text/hosts) — это модуль, а
-// сам фид — строка в БД. Один адаптер обслуживает много фидов.
 type SourceSpec struct {
 	ID        int64          `json:"id"`
 	Name      string         `json:"name"`
 	Adapter   string         `json:"adapter"`
 	URI       string         `json:"uri"`
-	ColumnMap map[string]int `json:"column_map,omitempty"` // поле -> номер колонки, для csv
+	ColumnMap map[string]int `json:"column_map,omitempty"`
 	Enabled   bool           `json:"enabled"`
 }
 
-// Ruleset — снапшот желаемого состояния; apply раздаёт его энфорсерам, каждый
-// читает свою часть.
 type Ruleset struct {
 	Rev     int64
 	IPv4    []netip.Prefix
@@ -92,7 +79,6 @@ type URLRule struct {
 	Threat string
 }
 
-// AllowSet — исключения; энфорсер сверяется с ним перед дропом, allow выигрывает.
 type AllowSet struct {
 	IPs     []netip.Prefix
 	Domains map[string]bool
@@ -103,8 +89,6 @@ var (
 	reHex32 = regexp.MustCompile(`^[a-fA-F0-9]{32}$`)
 )
 
-// Classify угадывает Kind по сырому значению. Если у фида есть колонка с типом —
-// лучше брать её; это запасной путь для голых списков.
 func Classify(v string) Kind {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -119,22 +103,20 @@ func Classify(v string) Kind {
 	if strings.Contains(v, "://") {
 		return KindURL
 	}
-	// CIDR проверяем до одиночного IP.
+
 	if _, err := netip.ParsePrefix(v); err == nil {
 		return KindCIDR
 	}
 	if _, err := netip.ParseAddr(v); err == nil {
 		return KindIP
 	}
-	// host с путём — это url, иначе голый домен.
+
 	if i := strings.IndexByte(v, '/'); i > 0 {
 		return KindURL
 	}
 	return KindDomain
 }
 
-// NormalizeKind переводит произвольный токен типа (из колонки фида) в Kind,
-// падая на Classify для незнакомых токенов.
 func NormalizeKind(token, value string) Kind {
 	switch strings.ToLower(strings.TrimSpace(token)) {
 	case "ip", "ipv4", "ipv6", "ip-dst", "ip-src":

@@ -1,5 +1,3 @@
-// Пакет text — адаптер простого списка: один индикатор на строку, вид
-// определяется сам. Комментарии '#' и пустые строки игнорируются.
 package text
 
 import (
@@ -20,11 +18,13 @@ type Module struct {
 
 func (m *Module) Name() string                    { return "feed-text" }
 func (m *Module) Needs() []string                 { return nil }
+func (m *Module) Title() string                   { return "Источник: список" }
+func (m *Module) About() string                   { return "загружает список построчно" }
 func (m *Module) Init(k *kernel.Kernel) error     { m.k = k; return nil }
 func (m *Module) Start(ctx context.Context) error { return nil }
 func (m *Module) Stop(ctx context.Context) error  { return nil }
 func (m *Module) Health() kernel.Health {
-	return kernel.Health{OK: true, Detail: "адаптер простого списка"}
+	return kernel.Health{OK: true, Detail: "готов"}
 }
 
 func (m *Module) Adapter() string { return "text" }

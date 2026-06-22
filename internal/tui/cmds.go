@@ -10,7 +10,6 @@ import (
 	"github.com/coffeinium/chaff/internal/model"
 )
 
-// DTO под JSON, который отдаёт демон (status/module.ls).
 type healthDTO struct {
 	OK      bool           `json:"ok"`
 	Detail  string         `json:"detail"`
@@ -19,6 +18,8 @@ type healthDTO struct {
 
 type moduleRow struct {
 	Name    string    `json:"name"`
+	Title   string    `json:"title"`
+	About   string    `json:"about"`
 	Enabled bool      `json:"enabled"`
 	Running bool      `json:"running"`
 	Health  healthDTO `json:"health"`
@@ -38,8 +39,6 @@ type (
 	actionMsg     struct{ text string }
 )
 
-// decode перекладывает generic Data ответа в типизированную структуру через
-// JSON — данные и так пришли по JSON, так что round-trip честный.
 func decode(data, target any) error {
 	b, err := json.Marshal(data)
 	if err != nil {

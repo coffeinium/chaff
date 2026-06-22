@@ -1,5 +1,3 @@
-// Пакет tui — интерактивный дашборд (Bubble Tea). Это клиент: ходит к демону
-// через тот же unix-сокет, что и обычные команды. Запуск — `chaff tui`.
 package tui
 
 import (
@@ -18,9 +16,8 @@ const (
 	viewCount
 )
 
-var viewTitles = []string{"Статус", "Модули", "Фиды", "Индикаторы"}
+var viewTitles = []string{"Статус", "Функции", "Списки", "Блокировки"}
 
-// Виды индикаторов, между которыми листает экран «Индикаторы».
 var indKinds = []model.Kind{
 	model.KindIP, model.KindCIDR, model.KindDomain,
 	model.KindURL, model.KindSHA256, model.KindMD5,
@@ -35,7 +32,7 @@ type appModel struct {
 	modules []moduleRow
 	sources []model.SourceSpec
 	inds    []model.Indicator
-	indKind int // индекс в indKinds
+	indKind int
 
 	msg string
 	err string
@@ -44,7 +41,6 @@ type appModel struct {
 	height int
 }
 
-// Run поднимает программу до выхода пользователя.
 func Run(socket string) error {
 	p := tea.NewProgram(appModel{socket: socket}, tea.WithAltScreen())
 	_, err := p.Run()
@@ -80,7 +76,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case actionMsg:
 		m.msg = msg.text
-		return m, m.load() // обновить текущий экран
+		return m, m.load()
 	}
 	return m, nil
 }
