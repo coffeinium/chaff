@@ -1,0 +1,20 @@
+[Unit]
+Description=chaff — modular IOC firewall (bump-in-the-wire)
+Documentation=https://github.com/coffeinium/chaff
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/chaff serve
+EnvironmentFile=-/etc/chaff/chaff.env
+Restart=on-failure
+RestartSec=2
+
+# Data-plane needs netfilter/bridge/NFQUEUE; not containerizable.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+StateDirectory=chaff
+
+[Install]
+WantedBy=multi-user.target
