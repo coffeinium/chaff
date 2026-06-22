@@ -91,25 +91,15 @@ func buildRequest(argv []string) (ipc.Request, error) {
 		}
 		return ipc.Request{Cmd: "module." + rest[0], Args: args}, nil
 
-	case "allow":
+	case "allow", "block":
 		if len(rest) < 1 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff allow add|rm|ls [VALUE]")
+			return ipc.Request{}, fmt.Errorf("использование: chaff %s add|rm [VALUE] [--note ПРИЧИНА]", group)
 		}
-		args := map[string]string{}
-		if len(rest) > 1 {
-			args["value"] = rest[1]
+		flags, pos := parseFlags(rest[1:])
+		if len(pos) > 0 {
+			flags["value"] = pos[0]
 		}
-		return ipc.Request{Cmd: "allow." + rest[0], Args: args}, nil
-
-	case "block":
-		if len(rest) < 1 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff block add|rm VALUE")
-		}
-		args := map[string]string{}
-		if len(rest) > 1 {
-			args["value"] = rest[1]
-		}
-		return ipc.Request{Cmd: "block." + rest[0], Args: args}, nil
+		return ipc.Request{Cmd: group + "." + rest[0], Args: flags}, nil
 
 	case "source":
 		if len(rest) < 1 {

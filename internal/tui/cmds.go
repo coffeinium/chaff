@@ -162,9 +162,13 @@ func toggleModule(socket, name string, enable bool) tea.Cmd {
 	}
 }
 
-func manualAction(socket, cmd, value string) tea.Cmd {
+func manualAction(socket, cmd, value, note string) tea.Cmd {
 	return func() tea.Msg {
-		resp, err := request(socket, ipc.Request{Cmd: cmd, Args: map[string]string{"value": value}})
+		args := map[string]string{"value": value}
+		if note != "" {
+			args["note"] = note
+		}
+		resp, err := request(socket, ipc.Request{Cmd: cmd, Args: args})
 		if err != nil {
 			return errMsg{err}
 		}

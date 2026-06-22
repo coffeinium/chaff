@@ -232,6 +232,9 @@ func (m appModel) bodyIndicators() string {
 		b.WriteString(emph(i == m.cursor, line) + "\n")
 	}
 	b.WriteString(dimStyle.Render(fmt.Sprintf("  %d/%d", m.cursor+1, len(inds))))
+	if m.cursor >= 0 && m.cursor < len(inds) && inds[m.cursor].Note != "" {
+		b.WriteString("\n" + dimStyle.Render("  причина: "+inds[m.cursor].Note))
+	}
 	return b.String()
 }
 
@@ -248,6 +251,14 @@ func actionStyled(a string) string {
 }
 
 func (m appModel) footer() string {
+	if m.noteMode {
+		verb := "заблокировать"
+		if m.noteCmd == "allow.add" {
+			verb = "разрешить"
+		}
+		return helpStyle.Render(verb+" "+truncate(m.actionVal, 28)+" · причина (необязательно): ") +
+			m.note + helpStyle.Render("▏  enter — ок · esc — отмена")
+	}
 	if m.action {
 		return helpStyle.Render("действие над ") + truncate(m.actionVal, 40) +
 			helpStyle.Render(":  b заблокировать · w разрешить · d снять ручное · esc отмена")

@@ -47,6 +47,9 @@ type appModel struct {
 	auto      bool
 	action    bool
 	actionVal string
+	noteMode  bool
+	noteCmd   string
+	note      string
 
 	msg string
 	err string
@@ -77,7 +80,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tickMsg:
-		if m.auto && !m.search && !m.showHelp && !m.action {
+		if m.auto && !m.search && !m.showHelp && !m.action && !m.noteMode {
 			return m, tea.Batch(m.refresh(), tick())
 		}
 		return m, tick()
@@ -120,6 +123,9 @@ func (m appModel) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.search {
 		return m.handleSearchKey(k)
+	}
+	if m.noteMode {
+		return m.handleNoteKey(k)
 	}
 	if m.action {
 		return m.handleActionKey(k)
@@ -219,14 +225,36 @@ func (m appModel) handleActionKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.action = false
 		return m, nil
 	case "b":
-		m.action = false
-		return m, manualAction(m.socket, "block.add", m.actionVal)
+		m.action, m.noteMode, m.noteCmd, m.note = false, true, "block.add", ""
+		return m, nil
 	case "w":
-		m.action = false
-		return m, manualAction(m.socket, "allow.add", m.actionVal)
+		m.action, m.noteMode, m.noteCmd, m.note = false, true, "allow.add", ""
+		return m, nil
 	case "d":
 		m.action = false
-		return m, manualAction(m.socket, "block.rm", m.actionVal)
+		return m, manualAction(m.socket, "block.rm", m.actionVal, "")
+	}
+	return m, nil
+}
+
+func (m appModel) handleNoteKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.noteMode = false
+		return m, nil
+	case "enter":
+		m.noteMode = false
+		return m, manualAction(m.socket, m.noteCmd, m.actionVal, m.note)
+	case "backspace":
+		if r := []rune(m.note); len(r) > 0 {
+			m.note = string(r[:len(r)-1])
+		}
+		return m, nil
+	}
+	if k.Type == tea.KeyRunes {
+		m.note += string(k.Runes)
 	}
 	return m, nil
 }

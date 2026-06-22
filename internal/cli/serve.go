@@ -158,7 +158,7 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		if v == "" {
 			return ipc.Err("использование: chaff allow add VALUE")
 		}
-		if err := st.AddManual(v, model.KindUnknown, model.ActionAllow); err != nil {
+		if err := st.AddManual(v, model.KindUnknown, model.ActionAllow, req.Arg("note")); err != nil {
 			return ipc.Err(err.Error())
 		}
 		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "allow.add"})
@@ -189,7 +189,7 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		if v == "" {
 			return ipc.Err("использование: chaff block add VALUE")
 		}
-		if err := st.AddManual(v, model.KindUnknown, model.ActionBlock); err != nil {
+		if err := st.AddManual(v, model.KindUnknown, model.ActionBlock, req.Arg("note")); err != nil {
 			return ipc.Err(err.Error())
 		}
 		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "block.add"})
@@ -206,6 +206,13 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		}
 		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "block.rm"})
 		return ipc.OK(fmt.Sprintf("удалено строк: %d", n))
+	})
+	srv.Handle("block.ls", func(_ ipc.Request) ipc.Response {
+		inds, err := st.ListManual(model.ActionBlock)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(inds)
 	})
 
 	srv.Handle("test", func(req ipc.Request) ipc.Response {

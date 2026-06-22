@@ -29,7 +29,7 @@ func render(group string, data any, jsonOut bool) {
 	switch group {
 	case "hits":
 		renderHits(rows(data))
-	case "list", "allow":
+	case "list", "allow", "block":
 		renderIndicators(rows(data))
 	case "module":
 		renderModules(rows(data))
@@ -77,9 +77,10 @@ func renderIndicators(in []map[string]any) {
 			str(i["kind"]),
 			action(str(i["action"])),
 			str(i["threat"]),
+			str(i["note"]),
 		})
 	}
-	table([]string{"значение", "вид", "действие", "угроза"}, out)
+	table([]string{"значение", "вид", "действие", "угроза", "причина"}, out)
 }
 
 func renderModules(ms []map[string]any) {

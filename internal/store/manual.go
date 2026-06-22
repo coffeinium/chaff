@@ -8,16 +8,20 @@ import (
 
 const ManualSourceID = 0
 
-func (s *Store) AddManual(value string, kind model.Kind, action model.Action) error {
+func (s *Store) AddManual(value string, kind model.Kind, action model.Action, note string) error {
 	if kind == model.KindUnknown {
 		kind = model.Classify(value)
 	}
 	now := time.Now().Unix()
 	_, err := s.db.Exec(`
-		INSERT INTO indicators (value, kind, action, scope, source_id, first_seen, last_seen, enabled)
-		VALUES (?, ?, ?, 'domain', ?, ?, ?, 1)
-		ON CONFLICT(value, kind, source_id) DO UPDATE SET action = excluded.action, last_seen = excluded.last_seen, enabled = 1`,
-		value, string(kind), string(action), ManualSourceID, now, now)
+		INSERT INTO indicators (value, kind, action, scope, note, source_id, first_seen, last_seen, enabled)
+		VALUES (?, ?, ?, 'domain', ?, ?, ?, ?, 1)
+		ON CONFLICT(value, kind, source_id) DO UPDATE SET
+			action    = excluded.action,
+			note      = CASE WHEN excluded.note <> '' THEN excluded.note ELSE note END,
+			last_seen = excluded.last_seen,
+			enabled   = 1`,
+		value, string(kind), string(action), note, ManualSourceID, now, now)
 	return err
 }
 
