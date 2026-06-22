@@ -3,6 +3,6 @@
 *.db
 *.db-wal
 *.db-shm
-
-# локальные тестовые фиды
 *.csv
+*_test.go
+/test/
