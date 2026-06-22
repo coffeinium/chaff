@@ -173,8 +173,14 @@ func (m appModel) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, toggleModule(m.socket, row.Name, !row.Enabled)
 		}
 	case viewSources:
-		if k.String() == "s" || k.String() == "enter" {
+		switch k.String() {
+		case "s", "enter":
 			return m, syncSources(m.socket)
+		case " ":
+			if m.cursor < len(m.sources) {
+				s := m.sources[m.cursor]
+				return m, toggleSource(m.socket, s.ID, !s.Enabled)
+			}
 		}
 	case viewHits:
 		if k.String() == "enter" && m.cursor < len(m.hits) {

@@ -131,6 +131,12 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		}
 		return ipc.OK(fmt.Sprintf("синхронизировано индикаторов: %d", n))
 	})
+	srv.Handle("source.enable", func(req ipc.Request) ipc.Response {
+		return setSource(k, req, true)
+	})
+	srv.Handle("source.disable", func(req ipc.Request) ipc.Response {
+		return setSource(k, req, false)
+	})
 
 	srv.Handle("list", func(req ipc.Request) ipc.Response {
 		inds, err := st.ListByKind(model.Kind(req.Arg("kind")))
@@ -320,6 +326,50 @@ type netController interface {
 	Configure(in, out, name string) error
 	Teardown() error
 	Status() string
+}
+
+func setSource(k *kernel.Kernel, req ipc.Request, enabled bool) ipc.Response {
+	spec, err := resolveSource(k.Store, req)
+	if err != nil {
+		return ipc.Err(err.Error())
+	}
+	if err := k.Store.SetSourceEnabled(spec.ID, enabled); err != nil {
+		return ipc.Err(err.Error())
+	}
+	k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "source.toggle"})
+	if enabled {
+		return ipc.OK(fmt.Sprintf("источник %q включён", spec.Name))
+	}
+	return ipc.OK(fmt.Sprintf("источник %q выключен", spec.Name))
+}
+
+func resolveSource(st *store.Store, req ipc.Request) (model.SourceSpec, error) {
+	specs, err := st.ListSources()
+	if err != nil {
+		return model.SourceSpec{}, err
+	}
+	if idStr := req.Arg("id"); idStr != "" {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return model.SourceSpec{}, fmt.Errorf("плохой id: %s", idStr)
+		}
+		for _, s := range specs {
+			if s.ID == id {
+				return s, nil
+			}
+		}
+		return model.SourceSpec{}, fmt.Errorf("источник id=%d не найден", id)
+	}
+	name := req.Arg("name")
+	if name == "" {
+		return model.SourceSpec{}, fmt.Errorf("нужно имя источника")
+	}
+	for _, s := range specs {
+		if s.Name == name {
+			return s, nil
+		}
+	}
+	return model.SourceSpec{}, fmt.Errorf("источник %q не найден", name)
 }
 
 func bridgeState(k *kernel.Kernel) map[string]any {

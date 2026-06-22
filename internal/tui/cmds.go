@@ -173,6 +173,21 @@ func manualAction(socket, cmd, value string) tea.Cmd {
 	}
 }
 
+func toggleSource(socket string, id int64, enable bool) tea.Cmd {
+	return func() tea.Msg {
+		cmd := "source.disable"
+		if enable {
+			cmd = "source.enable"
+		}
+		resp, err := request(socket, ipc.Request{Cmd: cmd, Args: map[string]string{"id": strconv.FormatInt(id, 10)}})
+		if err != nil {
+			return errMsg{err}
+		}
+		text, _ := resp.Data.(string)
+		return actionMsg{text}
+	}
+}
+
 func syncSources(socket string) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := request(socket, ipc.Request{Cmd: "source.sync"})

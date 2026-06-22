@@ -261,7 +261,7 @@ func (m appModel) footer() string {
 	case viewModules:
 		keys = "↑↓ выбор · space вкл/выкл · " + base
 	case viewSources:
-		keys = "↑↓ выбор · s загрузить · " + base
+		keys = "↑↓ выбор · space вкл/выкл · s загрузить · " + base
 	case viewIndicators:
 		keys = "←→ вид · ↑↓ листать · / поиск · enter действие · " + base
 	case viewHits:
@@ -296,6 +296,7 @@ func (m appModel) helpScreen() string {
 		{"", ""},
 		{"space / enter", "Функции: включить / выключить"},
 		{"s / enter", "Списки: загрузить источники"},
+		{"space", "Списки: включить / выключить источник"},
 		{"← →", "Блокировки: сменить вид"},
 		{"/", "Блокировки: поиск, esc — сброс"},
 		{"enter", "Блокировки/Срабатывания: действие над значением"},

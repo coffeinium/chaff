@@ -40,6 +40,25 @@ func (s *Store) EnabledSources() ([]model.SourceSpec, error) {
 	return scanSources(rows)
 }
 
+func (s *Store) SetSourceEnabled(id int64, enabled bool) error {
+	v := 0
+	if enabled {
+		v = 1
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE sources SET enabled = ? WHERE id = ?`, v, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE indicators SET enabled = ? WHERE source_id = ?`, v, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) UpdateSourceStatus(id int64, status string, count int, hash string) error {
 	_, err := s.db.Exec(`
 		UPDATE sources SET last_sync = ?, last_status = ?, last_count = ?, content_hash = ?

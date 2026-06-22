@@ -37,7 +37,22 @@ func cmdClient(argv []string) int {
 		return errln("%s", resp.Error)
 	}
 	render(argv[0], resp.Data, jsonOut)
-	return 0
+	return statusExit(argv[0], resp.Data)
+}
+
+func statusExit(group string, data any) int {
+	if group != "status" {
+		return 0
+	}
+	m, ok := data.(map[string]any)
+	if !ok {
+		return 1
+	}
+	br, _ := m["bridge"].(map[string]any)
+	if up, _ := br["up"].(bool); up {
+		return 0
+	}
+	return 1
 }
 
 func buildRequest(argv []string) (ipc.Request, error) {
@@ -98,11 +113,14 @@ func buildRequest(argv []string) (ipc.Request, error) {
 
 	case "source":
 		if len(rest) < 1 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff source add|ls|sync [...]")
+			return ipc.Request{}, fmt.Errorf("использование: chaff source add|ls|sync|enable|disable [...]")
 		}
 		flags, pos := parseFlags(rest[1:])
-		if rest[0] == "sync" && len(pos) > 0 {
-			flags["name"] = pos[0]
+		switch rest[0] {
+		case "sync", "enable", "disable":
+			if len(pos) > 0 {
+				flags["name"] = pos[0]
+			}
 		}
 		return ipc.Request{Cmd: "source." + rest[0], Args: flags}, nil
 
