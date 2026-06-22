@@ -2,7 +2,6 @@ package store
 
 import "time"
 
-// PutSnoop запоминает связку домен->ip, подсмотренную в DNS-ответе.
 func (s *Store) PutSnoop(domain, ip string, ttl time.Duration) error {
 	now := time.Now()
 	_, err := s.db.Exec(`
@@ -12,7 +11,6 @@ func (s *Store) PutSnoop(domain, ip string, ttl time.Duration) error {
 	return err
 }
 
-// ExpireSnoop удаляет протухшие записи и возвращает их число.
 func (s *Store) ExpireSnoop() (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM snoop WHERE expires_at > 0 AND expires_at <= strftime('%s','now')`)
 	if err != nil {
@@ -21,14 +19,12 @@ func (s *Store) ExpireSnoop() (int64, error) {
 	return res.RowsAffected()
 }
 
-// SnoopedIPsForBlockedDomains — IP, чей домен сейчас в блоклисте. Мостик между
-// пассивным DNS и IP-энфорсером.
 func (s *Store) SnoopedIPsForBlockedDomains() ([]string, error) {
 	rows, err := s.db.Query(`
 		SELECT DISTINCT sn.ip
 		FROM snoop sn
 		JOIN indicators i ON i.value = sn.domain
-		WHERE i.kind = 'domain' AND i.enabled = 1 AND i.action != 'allow'
+		WHERE i.kind = 'domain' AND i.enabled = 1 AND i.action = 'block'
 		  AND (sn.expires_at = 0 OR sn.expires_at > strftime('%s','now'))`)
 	if err != nil {
 		return nil, err
