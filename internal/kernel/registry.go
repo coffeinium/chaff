@@ -5,14 +5,10 @@ import (
 	"sort"
 )
 
-// Factory создаёт свежий несвязанный экземпляр модуля. Модули регистрируют себя
-// из init() своего пакета — импорта пакета достаточно, чтобы модуль появился.
 type Factory func() Module
 
 var registry = make(map[string]Factory)
 
-// Register добавляет фабрику модуля. Паникует на дубликат имени — это ошибка в
-// коде, которую ловим на старте.
 func Register(name string, f Factory) {
 	if _, dup := registry[name]; dup {
 		panic("kernel: повторная регистрация модуля: " + name)
@@ -20,7 +16,6 @@ func Register(name string, f Factory) {
 	registry[name] = f
 }
 
-// Registered возвращает все известные имена модулей, отсортированные.
 func Registered() []string {
 	names := make([]string, 0, len(registry))
 	for n := range registry {
@@ -36,4 +31,15 @@ func instantiate(name string) (Module, error) {
 		return nil, fmt.Errorf("неизвестный модуль %q", name)
 	}
 	return f(), nil
+}
+
+func Describe(name string) (title, about string) {
+	m, err := instantiate(name)
+	if err != nil {
+		return name, ""
+	}
+	if d, ok := m.(Describer); ok {
+		return d.Title(), d.About()
+	}
+	return name, ""
 }
