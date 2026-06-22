@@ -29,6 +29,18 @@ func (b *Bus) Subscribe(topic string) <-chan Event {
 	return ch
 }
 
+func (b *Bus) Unsubscribe(topic string, ch <-chan Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	subs := b.subs[topic]
+	for i, c := range subs {
+		if c == ch {
+			b.subs[topic] = append(subs[:i], subs[i+1:]...)
+			return
+		}
+	}
+}
+
 func (b *Bus) Publish(e Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()

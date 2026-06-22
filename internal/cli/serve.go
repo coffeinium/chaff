@@ -92,10 +92,10 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		return ipc.OK(moduleList(k))
 	})
 	srv.Handle("module.enable", func(req ipc.Request) ipc.Response {
-		return setModule(st, req.Arg("name"), true)
+		return setModule(k, req.Arg("name"), true)
 	})
 	srv.Handle("module.disable", func(req ipc.Request) ipc.Response {
-		return setModule(st, req.Arg("name"), false)
+		return setModule(k, req.Arg("name"), false)
 	})
 
 	srv.Handle("source.add", func(req ipc.Request) ipc.Response {
@@ -239,7 +239,7 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 	})
 }
 
-func setModule(st *store.Store, name string, enabled bool) ipc.Response {
+func setModule(k *kernel.Kernel, name string, enabled bool) ipc.Response {
 	if name == "" {
 		return ipc.Err("нужно имя модуля")
 	}
@@ -253,14 +253,14 @@ func setModule(st *store.Store, name string, enabled bool) ipc.Response {
 	if !known {
 		return ipc.Err("неизвестный модуль: " + name)
 	}
-	if err := st.SetModuleEnabled(name, enabled); err != nil {
+
+	if err := k.SetModule(name, enabled); err != nil {
 		return ipc.Err(err.Error())
 	}
-	state := "выключен"
 	if enabled {
-		state = "включён"
+		return ipc.OK(name + " включён")
 	}
-	return ipc.OK(fmt.Sprintf("%s %s (применится после рестарта демона)", name, state))
+	return ipc.OK(name + " выключен")
 }
 
 func testValue(k *kernel.Kernel, value string) ipc.Response {

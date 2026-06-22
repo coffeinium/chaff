@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/coffeinium/chaff/internal/bus"
 	"github.com/coffeinium/chaff/internal/config"
@@ -17,6 +18,9 @@ type Kernel struct {
 	Store  *store.Store
 	Bus    *bus.Bus
 
+	ctx  context.Context
+	opMu sync.Mutex
+
 	mu      sync.Mutex
 	running []Module
 }
@@ -26,6 +30,7 @@ func New(cfg *config.Config, log *slog.Logger, st *store.Store, b *bus.Bus) *Ker
 }
 
 func (k *Kernel) Boot(ctx context.Context) error {
+	k.ctx = ctx
 	want := make(map[string]bool)
 	for _, name := range Registered() {
 		if k.Store.IsModuleEnabled(name) {
@@ -101,6 +106,102 @@ func (k *Kernel) Running() []Module {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	return append([]Module(nil), k.running...)
+}
+
+func (k *Kernel) runningByName(name string) Module {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	for _, m := range k.running {
+		if m.Name() == name {
+			return m
+		}
+	}
+	return nil
+}
+
+func (k *Kernel) SetModule(name string, enabled bool) error {
+	k.opMu.Lock()
+	defer k.opMu.Unlock()
+	if k.ctx == nil {
+		return fmt.Errorf("ядро не готово")
+	}
+	if enabled {
+		if err := k.Store.SetModuleEnabled(name, true); err != nil {
+			return err
+		}
+		if err := k.startRec(name); err != nil {
+			_ = k.Store.SetModuleEnabled(name, false)
+			return err
+		}
+	} else {
+		if err := k.Store.SetModuleEnabled(name, false); err != nil {
+			return err
+		}
+		if err := k.stopModule(name); err != nil {
+			_ = k.Store.SetModuleEnabled(name, true)
+			return err
+		}
+	}
+	return k.Reconcile()
+}
+
+func (k *Kernel) startRec(name string) error {
+	if k.runningByName(name) != nil {
+		return nil
+	}
+	m, err := instantiate(name)
+	if err != nil {
+		return err
+	}
+	for _, dep := range m.Needs() {
+		if err := k.startRec(dep); err != nil {
+			return err
+		}
+	}
+	if err := m.Init(k); err != nil {
+		return fmt.Errorf("init %s: %w", name, err)
+	}
+	if err := m.Start(k.ctx); err != nil {
+		return fmt.Errorf("start %s: %w", name, err)
+	}
+	k.mu.Lock()
+	k.running = append(k.running, m)
+	k.mu.Unlock()
+	k.Log.Info("модуль запущен", "module", name)
+	return nil
+}
+
+func (k *Kernel) stopModule(name string) error {
+	target := k.runningByName(name)
+	if target == nil {
+		return nil
+	}
+	for _, m := range k.Running() {
+		if m.Name() == name {
+			continue
+		}
+		for _, dep := range m.Needs() {
+			if dep == name {
+				return fmt.Errorf("сначала выключи %s — он зависит от %s", m.Name(), name)
+			}
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := target.Stop(ctx); err != nil {
+		return err
+	}
+	k.mu.Lock()
+	out := k.running[:0]
+	for _, m := range k.running {
+		if m.Name() != name {
+			out = append(out, m)
+		}
+	}
+	k.running = out
+	k.mu.Unlock()
+	k.Log.Info("модуль остановлен", "module", name)
+	return nil
 }
 
 func (k *Kernel) Enforcers() []Enforcer {

@@ -16,6 +16,7 @@ type Module struct {
 	k      *kernel.Kernel
 	cancel context.CancelFunc
 	done   chan struct{}
+	reload <-chan bus.Event
 }
 
 func (m *Module) Name() string    { return "apply" }
@@ -33,6 +34,7 @@ func (m *Module) Start(ctx context.Context) error {
 	loopCtx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 	m.done = make(chan struct{})
+	m.reload = m.k.Bus.Subscribe(bus.TopicReload)
 	go m.loop(loopCtx)
 	return nil
 }
@@ -47,6 +49,10 @@ func (m *Module) Stop(ctx context.Context) error {
 		case <-ctx.Done():
 		}
 	}
+	if m.reload != nil {
+		m.k.Bus.Unsubscribe(bus.TopicReload, m.reload)
+		m.reload = nil
+	}
 	return nil
 }
 
@@ -56,7 +62,6 @@ func (m *Module) Health() kernel.Health {
 
 func (m *Module) loop(ctx context.Context) {
 	defer close(m.done)
-	reload := m.k.Bus.Subscribe(bus.TopicReload)
 	tick := time.NewTicker(5 * time.Minute)
 	defer tick.Stop()
 
@@ -66,7 +71,7 @@ func (m *Module) loop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case ev := <-reload:
+		case ev := <-m.reload:
 			reason, _ := ev.Data.(string)
 			m.reconcile(reason)
 		case <-tick.C:
