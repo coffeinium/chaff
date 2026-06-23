@@ -7,7 +7,7 @@ import (
 	"github.com/coffeinium/chaff/internal/model"
 )
 
-func (s *Store) UpsertIndicators(sourceID int64, inds []model.Indicator) (int, error) {
+func (s *Store) ReplaceIndicators(sourceID int64, inds []model.Indicator) (int, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -33,6 +33,7 @@ func (s *Store) UpsertIndicators(sourceID int64, inds []model.Indicator) (int, e
 	}
 	defer stmt.Close()
 
+	keep := make(map[[2]string]bool, len(inds))
 	n := 0
 	for _, in := range inds {
 		if in.Kind == model.KindUnknown || in.Value == "" {
@@ -50,7 +51,36 @@ func (s *Store) UpsertIndicators(sourceID int64, inds []model.Indicator) (int, e
 		); err != nil {
 			return n, err
 		}
+		keep[[2]string{in.Value, string(in.Kind)}] = true
 		n++
+	}
+
+	rows, err := tx.Query(`SELECT value, kind FROM indicators WHERE source_id = ?`, sourceID)
+	if err != nil {
+		return n, err
+	}
+	var stale [][2]string
+	for rows.Next() {
+		var v, k string
+		if err := rows.Scan(&v, &k); err != nil {
+			rows.Close()
+			return n, err
+		}
+		if !keep[[2]string{v, k}] {
+			stale = append(stale, [2]string{v, k})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return n, err
+	}
+	for _, sk := range stale {
+		if _, err := tx.Exec(
+			`DELETE FROM indicators WHERE source_id = ? AND value = ? AND kind = ?`,
+			sourceID, sk[0], sk[1],
+		); err != nil {
+			return n, err
+		}
 	}
 	return n, tx.Commit()
 }

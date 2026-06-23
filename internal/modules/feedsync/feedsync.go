@@ -89,10 +89,15 @@ func Run(ctx context.Context, k *kernel.Kernel) (int, error) {
 			k.Log.Error("синк: fetch не удался", "source", spec.Name, "err", err)
 			continue
 		}
-		n, err := k.Store.UpsertIndicators(spec.ID, inds)
+		if len(inds) == 0 {
+			_ = k.Store.UpdateSourceStatus(spec.ID, "пустой ответ — оставлен прошлый набор", 0, "")
+			k.Log.Warn("синк: пустой фид, prune пропущен", "source", spec.Name)
+			continue
+		}
+		n, err := k.Store.ReplaceIndicators(spec.ID, inds)
 		if err != nil {
 			_ = k.Store.UpdateSourceStatus(spec.ID, "ошибка стора: "+err.Error(), 0, "")
-			k.Log.Error("синк: upsert не удался", "source", spec.Name, "err", err)
+			k.Log.Error("синк: запись не удалась", "source", spec.Name, "err", err)
 			continue
 		}
 		_ = k.Store.UpdateSourceStatus(spec.ID, "ok", n, "")
