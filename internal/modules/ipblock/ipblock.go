@@ -71,13 +71,13 @@ func (m *Module) applySet(want []netip.Prefix) error {
 	for _, p := range want {
 		next[p] = true
 		if !m.applied[p] {
-			add = append(add, elem(p))
+			add = append(add, elems(p)...)
 		}
 	}
 	var del []nftables.SetElement
 	for p := range m.applied {
 		if !next[p] {
-			del = append(del, elem(p))
+			del = append(del, elems(p)...)
 		}
 	}
 
@@ -141,12 +141,12 @@ func desiredPrefixes(blockV4 []netip.Prefix, snoop []string, allow []netip.Prefi
 	return out
 }
 
-func elem(p netip.Prefix) nftables.SetElement {
+func elems(p netip.Prefix) []nftables.SetElement {
 	r := netipx.RangeOfPrefix(p)
 	start := r.From().As4()
-	if p.Bits() == 32 {
-		return nftables.SetElement{Key: start[:]}
+	end := r.To().Next().As4()
+	return []nftables.SetElement{
+		{Key: start[:]},
+		{Key: end[:], IntervalEnd: true},
 	}
-	next := r.To().Next().As4()
-	return nftables.SetElement{Key: start[:], KeyEnd: next[:]}
 }
