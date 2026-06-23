@@ -231,6 +231,7 @@ func registerHandlers(srv *ipc.Server, k *kernel.Kernel) {
 		if err := bc.Configure(in, out, req.Arg("name")); err != nil {
 			return ipc.Err(err.Error())
 		}
+		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "net.up"})
 		return ipc.OK(bc.Status())
 	})
 	srv.Handle("net.down", func(_ ipc.Request) ipc.Response {

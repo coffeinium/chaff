@@ -21,7 +21,6 @@ func init() {
 type Module struct {
 	k       *kernel.Kernel
 	mu      sync.Mutex
-	applied map[netip.Prefix]bool
 	count   int
 	lastErr error
 }
@@ -35,7 +34,6 @@ func (m *Module) About() string {
 
 func (m *Module) Init(k *kernel.Kernel) error {
 	m.k = k
-	m.applied = map[netip.Prefix]bool{}
 	return nil
 }
 func (m *Module) Start(ctx context.Context) error { return nil }
@@ -66,29 +64,14 @@ func (m *Module) applySet(want []netip.Prefix) error {
 		return m.lastErr
 	}
 
-	next := make(map[netip.Prefix]bool, len(want))
-	var add []nftables.SetElement
+	var all []nftables.SetElement
 	for _, p := range want {
-		next[p] = true
-		if !m.applied[p] {
-			add = append(add, elems(p)...)
-		}
-	}
-	var del []nftables.SetElement
-	for p := range m.applied {
-		if !next[p] {
-			del = append(del, elems(p)...)
-		}
+		all = append(all, elems(p)...)
 	}
 
-	if len(add) > 0 {
-		if err := c.SetAddElements(set, add); err != nil {
-			m.lastErr = err
-			return err
-		}
-	}
-	if len(del) > 0 {
-		if err := c.SetDeleteElements(set, del); err != nil {
+	c.FlushSet(set)
+	if len(all) > 0 {
+		if err := c.SetAddElements(set, all); err != nil {
 			m.lastErr = err
 			return err
 		}
@@ -97,10 +80,9 @@ func (m *Module) applySet(want []netip.Prefix) error {
 		m.lastErr = err
 		return err
 	}
-	m.applied = next
-	m.count = len(next)
+	m.count = len(want)
 	m.lastErr = nil
-	m.k.Log.Debug("ipblock: применено", "prefixes", len(next), "added", len(add), "removed", len(del))
+	m.k.Log.Debug("ipblock: применено", "prefixes", len(want))
 	return nil
 }
 
