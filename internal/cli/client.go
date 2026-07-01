@@ -10,20 +10,9 @@ import (
 )
 
 func cmdClient(argv []string) int {
-	jsonOut := false
-	filtered := argv[:0:0]
-	for _, a := range argv {
-		if a == "--json" {
-			jsonOut = true
-			continue
-		}
-		filtered = append(filtered, a)
-	}
-	argv = filtered
 	if len(argv) == 0 {
 		return errln("нет команды")
 	}
-
 	req, err := buildRequest(argv)
 	if err != nil {
 		return errln("%v", err)
@@ -35,7 +24,7 @@ func cmdClient(argv []string) int {
 	if !resp.OK {
 		return errln("%s", resp.Error)
 	}
-	render(argv[0], resp.Data, jsonOut)
+	render(argv[0], resp.Data, outputJSON)
 	return statusExit(argv[0], resp.Data)
 }
 

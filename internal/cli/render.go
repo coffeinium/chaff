@@ -23,7 +23,7 @@ func render(group string, data any, jsonOut bool) {
 		return
 	}
 	if s, ok := data.(string); ok {
-		fmt.Println(s)
+		fmt.Println(rOK.Render("✓") + " " + s)
 		return
 	}
 	switch group {
@@ -32,7 +32,7 @@ func render(group string, data any, jsonOut bool) {
 	case "flows":
 		renderFlows(rows(data))
 	case "list", "allow", "block":
-		renderIndicators(rows(data))
+		renderIndicators(indTitle(group), rows(data))
 	case "module":
 		renderModules(rows(data))
 	case "source":
@@ -51,9 +51,28 @@ func render(group string, data any, jsonOut bool) {
 	}
 }
 
+func section(title string) { fmt.Println(rHdr.Render(title)) }
+
+func footer(n int, noun string) {
+	fmt.Println(rDim.Render(strings.TrimRight(fmt.Sprintf("всего: %d %s", n, noun), " ")))
+}
+
+func empty(msg string) { fmt.Println(rDim.Render("  " + msg)) }
+
+func indTitle(group string) string {
+	switch group {
+	case "allow":
+		return "allow-список"
+	case "block":
+		return "block-список"
+	}
+	return "индикаторы"
+}
+
 func renderHits(hs []map[string]any) {
+	section("срабатывания")
 	if len(hs) == 0 {
-		fmt.Println(rDim.Render("срабатываний нет"))
+		empty("пусто")
 		return
 	}
 	var out [][]string
@@ -67,11 +86,13 @@ func renderHits(hs []map[string]any) {
 		})
 	}
 	table([]string{"время", "слой", "индикатор", "источник", "действие"}, out)
+	footer(len(hs), "")
 }
 
 func renderFlows(fs []map[string]any) {
+	section("соединения")
 	if len(fs) == 0 {
-		fmt.Println(rDim.Render("соединений нет (включён ли analyzer, поднят ли мост?)"))
+		empty("пусто (включён ли analyzer, поднят ли мост?)")
 		return
 	}
 	var out [][]string
@@ -88,23 +109,13 @@ func renderFlows(fs []map[string]any) {
 		})
 	}
 	table([]string{"src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл."}, out)
+	footer(len(fs), "")
 }
 
-func bytesH(n int) string {
-	switch {
-	case n >= 1<<30:
-		return fmt.Sprintf("%.1fG", float64(n)/(1<<30))
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1fM", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.1fK", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%dB", n)
-}
-
-func renderIndicators(in []map[string]any) {
+func renderIndicators(title string, in []map[string]any) {
+	section(title)
 	if len(in) == 0 {
-		fmt.Println(rDim.Render("(пусто)"))
+		empty("пусто")
 		return
 	}
 	var out [][]string
@@ -118,15 +129,21 @@ func renderIndicators(in []map[string]any) {
 		})
 	}
 	table([]string{"значение", "вид", "действие", "угроза", "причина"}, out)
+	footer(len(in), "")
 }
 
 func renderModules(ms []map[string]any) {
+	section("функции")
 	if len(ms) == 0 {
-		fmt.Println(rDim.Render("(пусто)"))
+		empty("пусто")
 		return
 	}
+	run := 0
 	var out [][]string
 	for _, m := range ms {
+		if boolean(m["running"]) {
+			run++
+		}
 		out = append(out, []string{
 			str(m["name"]),
 			str(m["title"]),
@@ -135,12 +152,14 @@ func renderModules(ms []map[string]any) {
 			health(m["health"]),
 		})
 	}
-	table([]string{"имя", "функция", "включена", "работает", "здоровье"}, out)
+	table([]string{"имя", "функция", "вкл", "работа", "здоровье"}, out)
+	fmt.Println(rDim.Render(fmt.Sprintf("работает: %d из %d", run, len(ms))))
 }
 
 func renderSources(ss []map[string]any) {
+	section("источники")
 	if len(ss) == 0 {
-		fmt.Println(rDim.Render("источников нет (chaff source add ...)"))
+		empty("пусто (chaff source add ...)")
 		return
 	}
 	var out [][]string
@@ -152,62 +171,88 @@ func renderSources(ss []map[string]any) {
 			str(s["uri"]),
 		})
 	}
-	table([]string{"имя", "адаптер", "включён", "источник"}, out)
+	table([]string{"имя", "адаптер", "вкл", "источник"}, out)
+	footer(len(ss), "")
 }
 
 func renderStatus(m map[string]any) {
+	section("состояние chaff")
+
 	if br := asMap(m["bridge"]); br != nil {
-		fmt.Println(rHdr.Render("мост") + "  " + bridgeLine(br))
+		fmt.Println("\n" + rHdr.Render("мост"))
+		fmt.Println(rDim.Render("└─ ") + bridgeGlyph(br) + " " + bridgeLine(br))
 	}
+
 	if mods := rows(m["modules"]); mods != nil {
-		running := 0
+		run := 0
 		for _, x := range mods {
 			if boolean(x["running"]) {
-				running++
+				run++
 			}
 		}
-		fmt.Printf("%s  работает %d из %d\n", rHdr.Render("функции"), running, len(mods))
+		fmt.Println("\n" + rHdr.Render(fmt.Sprintf("функции · работает %d из %d", run, len(mods))))
+		for j, x := range mods {
+			conn := "├─"
+			if j == len(mods)-1 {
+				conn = "└─"
+			}
+			fmt.Printf("%s %s %s %s\n", rDim.Render(conn), runCell(boolean(x["running"]), x["health"]), padName(str(x["name"]), 12), rDim.Render(str(x["title"])))
+		}
 	}
-	inds := asMap(m["indicators"])
-	if len(inds) > 0 {
-		fmt.Println(rHdr.Render("индикаторы"))
+
+	if inds := asMap(m["indicators"]); len(inds) > 0 {
 		keys := sortedKeys(inds)
+		total := 0
 		for _, k := range keys {
-			fmt.Printf("  %-8s %d\n", k, intOf(inds[k]))
+			total += intOf(inds[k])
+		}
+		fmt.Println("\n" + rHdr.Render(fmt.Sprintf("индикаторы · всего %d", total)))
+		for j, k := range keys {
+			conn := "├─"
+			if j == len(keys)-1 {
+				conn = "└─"
+			}
+			fmt.Printf("%s %s %d\n", rDim.Render(conn), padName(k, 8), intOf(inds[k]))
 		}
 	}
 }
 
 func renderTest(m map[string]any) {
-	fmt.Printf("%-9s %s\n", "значение", str(m["value"]))
-	fmt.Printf("%-9s %s\n", "вид", str(m["kind"]))
-	fmt.Printf("%-9s %s\n", "уровень", str(m["layer"]))
+	section("проверка")
+	row := func(conn, k, v string) {
+		fmt.Printf("%s %s %s\n", rDim.Render(conn), padName(k, 9), v)
+	}
+	row("├─", "значение", str(m["value"]))
+	row("├─", "вид", str(m["kind"]))
+	row("├─", "уровень", str(m["layer"]))
 	v := str(m["verdict"])
-	vs := rDim
+	g, vs := "·", rDim
 	switch v {
 	case "block":
-		vs = rOff
+		g, vs = "✗", rOff
 	case "monitor":
-		vs = rWarn
+		g, vs = "!", rWarn
 	case "allow":
-		vs = rOK
+		g, vs = "✓", rOK
 	}
-	fmt.Printf("%-9s %s\n", "вердикт", vs.Render(v))
+	row("└─", "вердикт", vs.Render(g+" "+v))
 }
 
 func renderWeb(data any) {
 	if m := asMap(data); m != nil {
 		if tok := str(m["token"]); tok != "" {
-			fmt.Println(rHdr.Render("токен создан, сохрани (больше не покажется):"))
+			section("токен создан")
+			empty("сохрани, больше не покажется:")
 			fmt.Println("  " + rOK.Render(tok))
 			if intOf(m["expires_at"]) > 0 {
-				fmt.Println(rDim.Render("  истекает: " + ts(m["expires_at"])))
+				empty("истекает: " + ts(m["expires_at"]))
 			}
 			return
 		}
 		if fp := str(m["fingerprint"]); fp != "" {
-			fmt.Printf("%-12s %s\n", "сертификат", str(m["path"]))
-			fmt.Printf("%-12s %s\n", "отпечаток", fp)
+			section("tls-сертификат")
+			fmt.Printf("%s %s %s\n", rDim.Render("├─"), padName("файл", 10), str(m["path"]))
+			fmt.Printf("%s %s %s\n", rDim.Render("└─"), padName("отпечаток", 10), fp)
 			return
 		}
 	}
@@ -215,8 +260,9 @@ func renderWeb(data any) {
 }
 
 func renderTokens(toks []map[string]any) {
+	section("токены")
 	if len(toks) == 0 {
-		fmt.Println(rDim.Render("токенов нет (chaff web token create)"))
+		empty("пусто (chaff web token create)")
 		return
 	}
 	var out [][]string
@@ -230,6 +276,19 @@ func renderTokens(toks []map[string]any) {
 		})
 	}
 	table([]string{"id", "имя", "создан", "истекает", "исп."}, out)
+	footer(len(toks), "")
+}
+
+func bytesH(n int) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1fG", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1fK", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%dB", n)
 }
 
 func tokenExpiry(v any) string {
@@ -260,6 +319,17 @@ func bridgeLine(br map[string]any) string {
 	}
 }
 
+func bridgeGlyph(br map[string]any) string {
+	switch {
+	case !boolean(br["running"]):
+		return rOff.Render("✗")
+	case boolean(br["up"]):
+		return rOK.Render("✓")
+	default:
+		return rWarn.Render("!")
+	}
+}
+
 func table(headers []string, rows [][]string) {
 	w := make([]int, len(headers))
 	for i, h := range headers {
@@ -272,8 +342,9 @@ func table(headers []string, rows [][]string) {
 			}
 		}
 	}
-	line := func(cells []string) {
+	line := func(prefix string, cells []string) {
 		var b strings.Builder
+		b.WriteString(prefix)
 		for i, c := range cells {
 			b.WriteString(pad(c, w[i]))
 			if i < len(cells)-1 {
@@ -286,9 +357,9 @@ func table(headers []string, rows [][]string) {
 	for i, h := range headers {
 		hcells[i] = rHdr.Render(h)
 	}
-	line(hcells)
+	line(rDim.Render("  "), hcells)
 	for _, r := range rows {
-		line(r)
+		line("  ", r)
 	}
 }
 
@@ -363,21 +434,21 @@ func action(a string) string {
 
 func onoff(b bool) string {
 	if b {
-		return rOK.Render("вкл")
+		return rOK.Render("✓")
 	}
-	return rOff.Render("выкл")
+	return rOff.Render("✗")
 }
 
 func runCell(running bool, health any) string {
 	if !running {
-		return rDim.Render("нет")
+		return rOff.Render("✗")
 	}
 	if m := asMap(health); m != nil {
 		if ok, has := m["ok"].(bool); has && !ok {
-			return rOff.Render("сбой")
+			return rWarn.Render("!")
 		}
 	}
-	return rOK.Render("да")
+	return rOK.Render("✓")
 }
 
 func health(v any) string {

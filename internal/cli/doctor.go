@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -31,7 +32,9 @@ func cmdDoctor(_ []string) int {
 		gNet    = "сеть"
 	)
 
-	fmt.Println(rHdr.Render(fmt.Sprintf("chaff %s · проверка окружения", version.Version)))
+	if !outputJSON {
+		fmt.Println(rHdr.Render(fmt.Sprintf("chaff %s · проверка окружения", version.Version)))
+	}
 
 	root := os.Geteuid() == 0
 	if root {
@@ -140,6 +143,48 @@ func cmdDoctor(_ []string) int {
 		add(gNet, "OK", "аплинк", def+" · маршрут по умолчанию, не бриджуй как --in", "")
 	}
 
+	ok, warn, errc := 0, 0, 0
+	var fixes []string
+	for _, c := range checks {
+		switch c.status {
+		case "OK":
+			ok++
+		case "WARN":
+			warn++
+		case "ERR":
+			errc++
+		}
+		if c.status != "OK" && c.fix != "" {
+			fixes = append(fixes, c.fix)
+		}
+	}
+
+	if outputJSON {
+		type dcheck struct {
+			Group  string `json:"group"`
+			Status string `json:"status"`
+			Name   string `json:"name"`
+			Detail string `json:"detail"`
+			Fix    string `json:"fix,omitempty"`
+		}
+		dc := make([]dcheck, 0, len(checks))
+		for _, c := range checks {
+			dc = append(dc, dcheck{c.group, c.status, c.name, c.detail, c.fix})
+		}
+		b, _ := json.MarshalIndent(map[string]any{
+			"version": version.Version,
+			"ok":      ok,
+			"warn":    warn,
+			"err":     errc,
+			"checks":  dc,
+		}, "", "  ")
+		fmt.Println(string(b))
+		if errc > 0 {
+			return 1
+		}
+		return 0
+	}
+
 	groups := []string{gAccess, gKernel, gData, gStore, gDaemon, gNet}
 	for _, g := range groups {
 		var idx []int
@@ -162,22 +207,6 @@ func cmdDoctor(_ []string) int {
 		}
 	}
 	fmt.Println("   " + rDim.Render("* маршрут по умолчанию; для врезки нужны два ethernet-порта (wifi/tun/wireguard не бриджуются)"))
-
-	ok, warn, errc := 0, 0, 0
-	var fixes []string
-	for _, c := range checks {
-		switch c.status {
-		case "OK":
-			ok++
-		case "WARN":
-			warn++
-		case "ERR":
-			errc++
-		}
-		if c.status != "OK" && c.fix != "" {
-			fixes = append(fixes, c.fix)
-		}
-	}
 
 	fmt.Println("\n" + rDim.Render(strings.Repeat("─", 52)))
 	warnB := rDim.Render(fmt.Sprintf("%d !", warn))

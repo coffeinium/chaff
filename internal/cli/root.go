@@ -49,7 +49,10 @@ const usageText = `chaff, модульный IOC-файрволл (в разры
   --json к любой команде: вывод в JSON (для скриптов)
 `
 
+var outputJSON bool
+
 func Main(args []string) int {
+	args, outputJSON = stripJSON(args)
 	if len(args) == 0 {
 		printUsage()
 		return 2
@@ -70,6 +73,19 @@ func Main(args []string) int {
 	default:
 		return cmdClient(args)
 	}
+}
+
+func stripJSON(args []string) ([]string, bool) {
+	out := make([]string, 0, len(args))
+	j := false
+	for _, a := range args {
+		if a == "--json" {
+			j = true
+			continue
+		}
+		out = append(out, a)
+	}
+	return out, j
 }
 
 func printUsage() {
