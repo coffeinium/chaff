@@ -30,6 +30,12 @@ curl -fsSL https://raw.githubusercontent.com/coffeinium/chaff/main/deploy/instal
 врезать мост интерактивным меню (`chaff setup`). Повторный запуск обновляет бинарь,
 конфиг и БД остаются.
 
+Обновление до последнего релиза (меняет только бинарь и перезапускает сервис):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/coffeinium/chaff/main/deploy/install.sh | sudo bash -s -- update
+```
+
 Полное удаление (снимает врезку, сервис и все файлы):
 
 ```bash

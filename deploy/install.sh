@@ -10,34 +10,50 @@ MODLOAD="/etc/modules-load.d/chaff.conf"
 VER="${CHAFF_VERSION:-latest}"
 
 die() { echo "ошибка: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null || die "нужен $1"; }
 
 [ "$(id -u)" = 0 ] || die "нужен root, запускай через sudo"
 [ "$(uname -s)" = Linux ] || die "chaff работает только под Linux"
 
-install_chaff() {
-	command -v curl >/dev/null || die "нужен curl"
-	command -v systemctl >/dev/null || die "нужен systemd"
-
-	local ARCH
+arch() {
 	case "$(uname -m)" in
-		x86_64 | amd64) ARCH=amd64 ;;
-		aarch64 | arm64) ARCH=arm64 ;;
+		x86_64 | amd64) echo amd64 ;;
+		aarch64 | arm64) echo arm64 ;;
 		*) die "неподдерживаемая архитектура: $(uname -m)" ;;
 	esac
+}
 
+resolve_version() {
 	if [ "$VER" = latest ]; then
 		VER=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -oP '"tag_name"\s*:\s*"\K[^"]+') \
-			|| die "не удалось узнать последнюю версию"
+			|| die "не узнать последнюю версию"
 	fi
 	[ -n "$VER" ] || die "пустая версия"
-	echo "== chaff $VER ($ARCH) =="
+}
 
-	local URL TMP
-	URL="https://github.com/$REPO/releases/download/$VER/chaff-linux-$ARCH"
+fetch_bin() {
+	local a url
+	a=$(arch)
+	url="https://github.com/$REPO/releases/download/$VER/chaff-linux-$a"
+	echo "качаю $url"
+	curl -fSL -o "$1" "$url" || die "не скачать бинарь (есть ли asset chaff-linux-$a в релизе $VER?)"
+	chmod 0755 "$1"
+}
+
+installed_version() {
+	"$BIN" version 2>/dev/null | grep -oP 'chaff \K[0-9][0-9.]*' || echo "?"
+}
+
+install_chaff() {
+	need curl
+	need systemctl
+	resolve_version
+	echo "== chaff $VER ($(arch)) =="
+
+	local TMP
 	TMP=$(mktemp)
 	trap 'rm -f "$TMP"' EXIT
-	echo "качаю $URL"
-	curl -fSL -o "$TMP" "$URL" || die "не удалось скачать бинарь (есть ли asset chaff-linux-$ARCH в релизе $VER?)"
+	fetch_bin "$TMP"
 	install -m0755 "$TMP" "$BIN"
 	echo "бинарь: $BIN ($("$BIN" version))"
 
@@ -97,33 +113,81 @@ UNITEOF
 готово. дальше:
   chaff net up --in IF --out IF
   chaff status
-удаление: curl -fsSL https://raw.githubusercontent.com/$REPO/main/deploy/install.sh | sudo bash -s -- uninstall
+обновление: curl -fsSL https://raw.githubusercontent.com/$REPO/main/deploy/install.sh | sudo bash -s -- update
+удаление:   curl -fsSL https://raw.githubusercontent.com/$REPO/main/deploy/install.sh | sudo bash -s -- uninstall
 DONE
 }
 
-uninstall_chaff() {
-	echo "== удаление chaff =="
-	if [ -x "$BIN" ]; then
-		"$BIN" net down 2>/dev/null && echo "мост снят" || true
+update_chaff() {
+	need curl
+	[ -x "$BIN" ] || die "chaff не установлен, сначала install"
+	resolve_version
+	local cur new
+	cur=$(installed_version)
+	new=${VER#v}
+	if [ "$cur" = "$new" ] && [ -z "${CHAFF_FORCE:-}" ]; then
+		echo "уже последняя ($cur), CHAFF_FORCE=1 чтобы переустановить"
+		return
 	fi
+	echo "== обновление $cur -> $new ($(arch)) =="
+	local TMP
+	TMP=$(mktemp)
+	trap 'rm -f "$TMP"' EXIT
+	fetch_bin "$TMP"
+	install -m0755 "$TMP" "$BIN"
 	if command -v systemctl >/dev/null; then
-		systemctl disable --now chaff 2>/dev/null || true
-		rm -f "$UNIT"
+		systemctl restart chaff 2>/dev/null || true
+	fi
+	echo "обновлено: $("$BIN" version)"
+}
+
+uninstall_chaff() {
+	echo "== удаление chaff (все версии) =="
+
+	local bins=() b
+	command -v chaff >/dev/null && bins+=("$(command -v chaff)")
+	for b in /usr/local/bin/chaff /usr/bin/chaff /bin/chaff /opt/chaff/chaff "${HOME:-/root}/go/bin/chaff"; do
+		[ -e "$b" ] && bins+=("$b")
+	done
+
+	local runner=""
+	for b in "${bins[@]}"; do [ -x "$b" ] && { runner="$b"; break; }; done
+	[ -n "$runner" ] && { "$runner" net down 2>/dev/null && echo "мост снят" || true; }
+
+	if command -v systemctl >/dev/null; then
+		local u
+		for u in $(systemctl list-unit-files --no-legend 'chaff*.service' 2>/dev/null | awk '{print $1}') chaff.service; do
+			systemctl disable --now "$u" 2>/dev/null || true
+		done
+		rm -f /etc/systemd/system/chaff*.service /run/systemd/system/chaff*.service /usr/lib/systemd/system/chaff*.service
 		systemctl daemon-reload 2>/dev/null || true
 	fi
+
+	pkill -x chaff 2>/dev/null || true
+
 	command -v nft >/dev/null && nft delete table inet chaff 2>/dev/null || true
-	for br in br0 chaff0; do ip link del "$br" 2>/dev/null || true; done
-	rm -f /run/chaff.sock
-	rm -f "$BIN"
+	for b in br0 chaff0; do ip link del "$b" 2>/dev/null || true; done
+
+	if [ -f "$ETC/chaff.env" ]; then
+		set -a
+		. "$ETC/chaff.env"
+		set +a
+	fi
+	rm -f "${CHAFF_SOCKET:-/run/chaff.sock}"
+	[ -n "${CHAFF_DB:-}" ] && rm -f "$CHAFF_DB" "$CHAFF_DB-wal" "$CHAFF_DB-shm" || true
+
+	for b in "${bins[@]}"; do rm -f "$b" && echo "снят бинарь: $b" || true; done
 	rm -rf "$ETC" "$STATE"
 	rm -f "$MODLOAD"
-	echo "удалено: бинарь, $ETC, $STATE, юнит, автозагрузка модулей, сокет, таблица nft inet chaff"
-	echo "модули br_netfilter/nf_conntrack_bridge оставлены загруженными (общие)"
+
+	echo "удалено: бинари, $ETC, $STATE, юниты chaff*, автозагрузка модулей, сокет, таблица nft inet chaff"
+	echo "модули br_netfilter/nf_conntrack_bridge оставлены (общие)"
 	echo "нестандартное имя моста снять вручную: ip link del ИМЯ"
 }
 
 case "${1:-install}" in
 	install) install_chaff ;;
+	update | upgrade) update_chaff ;;
 	uninstall | remove) uninstall_chaff ;;
-	*) die "использование: install.sh [install|uninstall]" ;;
+	*) die "использование: install.sh [install|update|uninstall]" ;;
 esac
