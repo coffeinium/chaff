@@ -258,7 +258,7 @@ func testValue(k *kernel.Kernel, value string) ipc.Response {
 	case model.KindDomain, model.KindURL:
 		layer = "L7 инлайн (sniblock)"
 	case model.KindSHA256, model.KindMD5:
-		layer = "нет — хеш файла, не дело сетевого файрволла"
+		layer = "нет, хеш файла не дело сетевого файрволла"
 	}
 	verdict := "нет совпадения"
 	matches, _ := k.Store.Lookup(value)

@@ -57,7 +57,7 @@ func (m *Module) Init(k *kernel.Kernel) error {
 
 func (m *Module) Start(ctx context.Context) error {
 	if m.conf.In == "" || m.conf.Out == "" {
-		m.k.Log.Info("bridge: не настроен — задай `chaff net up --in IF --out IF`")
+		m.k.Log.Info("bridge: не настроен, задай `chaff net up --in IF --out IF`")
 		return nil
 	}
 	m.apply()

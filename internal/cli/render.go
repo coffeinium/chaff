@@ -140,7 +140,7 @@ func renderModules(ms []map[string]any) {
 
 func renderSources(ss []map[string]any) {
 	if len(ss) == 0 {
-		fmt.Println(rDim.Render("источников нет — chaff source add ..."))
+		fmt.Println(rDim.Render("источников нет (chaff source add ...)"))
 		return
 	}
 	var out [][]string
@@ -198,7 +198,7 @@ func renderTest(m map[string]any) {
 func renderWeb(data any) {
 	if m := asMap(data); m != nil {
 		if tok := str(m["token"]); tok != "" {
-			fmt.Println(rHdr.Render("токен создан — сохрани, больше не покажется:"))
+			fmt.Println(rHdr.Render("токен создан, сохрани (больше не покажется):"))
 			fmt.Println("  " + rOK.Render(tok))
 			if intOf(m["expires_at"]) > 0 {
 				fmt.Println(rDim.Render("  истекает: " + ts(m["expires_at"])))
@@ -216,7 +216,7 @@ func renderWeb(data any) {
 
 func renderTokens(toks []map[string]any) {
 	if len(toks) == 0 {
-		fmt.Println(rDim.Render("токенов нет — chaff web token create"))
+		fmt.Println(rDim.Render("токенов нет (chaff web token create)"))
 		return
 	}
 	var out [][]string
@@ -241,7 +241,7 @@ func tokenExpiry(v any) string {
 
 func tokenLast(v any) string {
 	if intOf(v) == 0 {
-		return "—"
+		return "-"
 	}
 	return ts(v)
 }

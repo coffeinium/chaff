@@ -28,7 +28,7 @@ func loadOrGenCert(cfg *config.Config) (tls.Certificate, error) {
 		return tls.Certificate{}, fmt.Errorf("заданы CHAFF_WEB_TLS_CERT/KEY, но нет обоих файлов (%s, %s)", certPath, keyPath)
 	}
 	if certExists || keyExists {
-		return tls.Certificate{}, fmt.Errorf("есть только один из cert/key — не перезатираю: %s / %s", certPath, keyPath)
+		return tls.Certificate{}, fmt.Errorf("есть только один из cert/key, не перезатираю: %s / %s", certPath, keyPath)
 	}
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

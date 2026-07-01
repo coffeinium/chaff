@@ -1,5 +1,3 @@
--- Passive DNS cache: domain -> resolved IP, learned read-only from DNS answers
--- crossing the bridge. Short TTL; feeds derived bad-IPs into the IP enforcer.
 CREATE TABLE IF NOT EXISTS snoop (
     id         INTEGER PRIMARY KEY,
     domain     TEXT    NOT NULL,

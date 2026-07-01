@@ -78,14 +78,13 @@ async function loadVersion() {
     const u = $("#update");
     u.textContent = "";
     if (d.outdated) {
-      u.append(document.createTextNode("доступна новая версия " + d.latest + " — "));
+      u.append(document.createTextNode("доступна новая версия " + d.latest + ": "));
       u.append(h("a", { href: d.url, target: "_blank", rel: "noreferrer noopener", text: "релиз" }));
       u.classList.remove("hidden");
     } else {
       u.classList.add("hidden");
     }
   } catch (e) {
-    /* оффлайн — просто не показываем */
   }
 }
 
@@ -261,7 +260,7 @@ async function viewStatus() {
   if (ikeys.length) {
     v.append(h("h3", { class: "subh", text: "индикаторы по видам" }));
     v.append(tableEl(["вид", "кол-во"], ikeys.map((k) =>
-      h("tr", null, h("td", { text: k || "—" }), h("td", { text: String(inds[k]) })))));
+      h("tr", null, h("td", { text: k || "-" }), h("td", { text: String(inds[k]) })))));
   }
 }
 
@@ -307,7 +306,7 @@ async function viewFlows() {
     flows = await api("analyzer.flows", { limit: "300" });
   } catch (e) {
     if (e.message === "нужен вход") return;
-    v.append(h("p", { class: "dim", text: "анализатор выключен — включи модуль analyzer на вкладке «Функции»" }));
+    v.append(h("p", { class: "dim", text: "анализатор выключен, включи модуль analyzer на вкладке «Функции»" }));
     return;
   }
   flows = flows || [];

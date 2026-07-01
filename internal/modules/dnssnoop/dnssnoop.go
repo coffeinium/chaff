@@ -58,7 +58,7 @@ func (m *Module) Init(k *kernel.Kernel) error {
 
 func (m *Module) Start(ctx context.Context) error {
 	if m.iface == "" {
-		m.k.Log.Info("dnssnoop: нет uplink-интерфейса — настрой `chaff net up`")
+		m.k.Log.Info("dnssnoop: нет uplink-интерфейса, настрой `chaff net up`")
 		return nil
 	}
 	m.refresh()

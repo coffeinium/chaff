@@ -1,8 +1,7 @@
--- Enforcement hits for observability/tuning (`chaff log`).
 CREATE TABLE IF NOT EXISTS hits (
     id        INTEGER PRIMARY KEY,
     ts        INTEGER NOT NULL,
-    layer     TEXT    NOT NULL,           -- ip|sni|http|dns
+    layer     TEXT    NOT NULL,
     indicator TEXT    NOT NULL,
     src_ip    TEXT    NOT NULL DEFAULT '',
     detail    TEXT    NOT NULL DEFAULT ''

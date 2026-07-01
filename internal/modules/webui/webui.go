@@ -176,7 +176,7 @@ func (m *Module) Health() kernel.Health {
 	}
 	detail := m.url()
 	if tokens == 0 {
-		detail += " (нет токенов — chaff web token create)"
+		detail += " (нет токенов, chaff web token create)"
 	}
 	return kernel.Health{OK: up, Detail: detail, Metrics: metrics}
 }

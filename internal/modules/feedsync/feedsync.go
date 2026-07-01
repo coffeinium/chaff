@@ -90,7 +90,7 @@ func Run(ctx context.Context, k *kernel.Kernel) (int, error) {
 			continue
 		}
 		if len(inds) == 0 {
-			_ = k.Store.UpdateSourceStatus(spec.ID, "пустой ответ — оставлен прошлый набор", 0, "")
+			_ = k.Store.UpdateSourceStatus(spec.ID, "пустой ответ, оставлен прошлый набор", 0, "")
 			k.Log.Warn("синк: пустой фид, prune пропущен", "source", spec.Name)
 			continue
 		}

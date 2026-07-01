@@ -86,7 +86,7 @@ func certInfo(cfg *config.Config) ipc.Response {
 	path := cfg.CertFile()
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return ipc.Err("сертификат не найден — включи модуль webui с TLS")
+		return ipc.Err("сертификат не найден (включи webui с TLS)")
 	}
 	block, _ := pem.Decode(raw)
 	if block == nil {

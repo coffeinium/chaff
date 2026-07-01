@@ -88,7 +88,7 @@ func (m *Module) Init(k *kernel.Kernel) error {
 
 func (m *Module) Start(ctx context.Context) error {
 	if m.iface == "" {
-		m.k.Log.Info("analyzer: нет интерфейса — настрой `chaff net up`")
+		m.k.Log.Info("analyzer: нет интерфейса, настрой `chaff net up`")
 		return nil
 	}
 	tp, err := afpacket.NewTPacket(

@@ -182,7 +182,7 @@ func (k *Kernel) stopModule(name string) error {
 		}
 		for _, dep := range m.Needs() {
 			if dep == name {
-				return fmt.Errorf("сначала выключи %s — он зависит от %s", m.Name(), name)
+				return fmt.Errorf("сначала выключи %s, он зависит от %s", m.Name(), name)
 			}
 		}
 	}
