@@ -44,6 +44,12 @@ code { color: var(--accent); }
 .login-box h1 {
   margin: 0 0 10px;
   font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  user-select: none;
+}
+.login-box h1 span {
   font-weight: 700;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -89,10 +95,24 @@ header {
   z-index: 5;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+  user-select: none;
+  padding-right: 14px;
+  border-right: 1px solid var(--line);
+}
+.brand .name {
   font-weight: 700;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--fg);
+}
+.logo {
+  display: block;
+  flex: none;
+  color: var(--accent);
 }
 .spacer { flex: 1; }
 .auto { color: var(--dim); user-select: none; white-space: nowrap; }

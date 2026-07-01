@@ -80,6 +80,13 @@ func buildRequest(argv []string) (ipc.Request, error) {
 		}
 		return ipc.Request{Cmd: "hits", Args: args}, nil
 
+	case "flows":
+		args := map[string]string{}
+		if len(rest) > 0 {
+			args["limit"] = rest[0]
+		}
+		return ipc.Request{Cmd: "analyzer.flows", Args: args}, nil
+
 	case "module":
 		if len(rest) < 1 {
 			return ipc.Request{}, fmt.Errorf("использование: chaff module ls|enable|disable [NAME]")

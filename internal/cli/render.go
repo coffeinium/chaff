@@ -29,6 +29,8 @@ func render(group string, data any, jsonOut bool) {
 	switch group {
 	case "hits":
 		renderHits(rows(data))
+	case "flows":
+		renderFlows(rows(data))
 	case "list", "allow", "block":
 		renderIndicators(rows(data))
 	case "module":
@@ -65,6 +67,39 @@ func renderHits(hs []map[string]any) {
 		})
 	}
 	table([]string{"время", "слой", "индикатор", "источник", "действие"}, out)
+}
+
+func renderFlows(fs []map[string]any) {
+	if len(fs) == 0 {
+		fmt.Println(rDim.Render("соединений нет (включён ли analyzer, поднят ли мост?)"))
+		return
+	}
+	var out [][]string
+	for _, f := range fs {
+		out = append(out, []string{
+			str(f["src_mac"]),
+			str(f["src_ip"]),
+			str(f["kind"]),
+			str(f["dst"]),
+			fmt.Sprintf("%s/%d", str(f["proto"]), intOf(f["port"])),
+			fmt.Sprintf("%d", intOf(f["packets"])),
+			bytesH(intOf(f["bytes"])),
+			ts(f["last"]),
+		})
+	}
+	table([]string{"src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл."}, out)
+}
+
+func bytesH(n int) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1fG", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1fK", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%dB", n)
 }
 
 func renderIndicators(in []map[string]any) {

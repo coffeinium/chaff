@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 func (s *Store) PutSnoop(domain, ip string, ttl time.Duration) error {
 	now := time.Now()
@@ -17,6 +20,21 @@ func (s *Store) ExpireSnoop() (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+func (s *Store) DomainForIP(ip string) (string, bool, error) {
+	var d string
+	err := s.db.QueryRow(`
+		SELECT domain FROM snoop
+		WHERE ip = ? AND (expires_at = 0 OR expires_at > strftime('%s','now'))
+		ORDER BY seen_at DESC LIMIT 1`, ip).Scan(&d)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return d, true, nil
 }
 
 func (s *Store) SnoopedIPsForBlockedDomains() ([]string, error) {

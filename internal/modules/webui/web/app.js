@@ -117,6 +117,7 @@ $("#logout").addEventListener("click", async () => {
 const VIEWS = [
   ["status", "Статус"],
   ["hits", "Срабатывания"],
+  ["flows", "Соединения"],
   ["modules", "Функции"],
   ["sources", "Списки"],
   ["indicators", "Блокировки"],
@@ -148,6 +149,7 @@ async function renderView() {
   try {
     if (current === "status") await viewStatus();
     else if (current === "hits") await viewHits();
+    else if (current === "flows") await viewFlows();
     else if (current === "modules") await viewModules();
     else if (current === "sources") await viewSources();
     else if (current === "indicators") await viewIndicators();
@@ -287,6 +289,46 @@ async function viewHits() {
     ),
   );
   v.append(tableEl(["время", "слой", "индикатор", "источник", "детали", "действие"], rows));
+}
+
+function human(n) {
+  n = Number(n) || 0;
+  if (n >= 1073741824) return (n / 1073741824).toFixed(1) + "G";
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + "M";
+  if (n >= 1024) return (n / 1024).toFixed(1) + "K";
+  return n + "B";
+}
+
+async function viewFlows() {
+  const v = $("#view");
+  v.textContent = "";
+  let flows;
+  try {
+    flows = await api("analyzer.flows", { limit: "300" });
+  } catch (e) {
+    if (e.message === "нужен вход") return;
+    v.append(h("p", { class: "dim", text: "анализатор выключен — включи модуль analyzer на вкладке «Функции»" }));
+    return;
+  }
+  flows = flows || [];
+  if (!flows.length) {
+    v.append(h("p", { class: "dim", text: "соединений пока нет" }));
+    return;
+  }
+  const rows = flows.map((f) =>
+    h("tr", null,
+      h("td", { text: f.src_mac || "" }),
+      h("td", { text: f.src_ip || "" }),
+      h("td", null, h("span", { class: "tag", text: f.kind || "" })),
+      h("td", { text: f.dst || "" }),
+      h("td", { text: (f.proto || "") + "/" + f.port }),
+      h("td", { text: String(f.packets) }),
+      h("td", { text: human(f.bytes) }),
+      h("td", { text: tsFmt(f.last) }),
+      h("td", null, indActions(f.dst)),
+    ),
+  );
+  v.append(tableEl(["src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл.", "действие"], rows));
 }
 
 async function viewModules() {

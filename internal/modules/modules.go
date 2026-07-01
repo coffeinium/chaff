@@ -1,6 +1,7 @@
 package modules
 
 import (
+	_ "github.com/coffeinium/chaff/internal/modules/analyzer"
 	_ "github.com/coffeinium/chaff/internal/modules/apply"
 	_ "github.com/coffeinium/chaff/internal/modules/bridge"
 	_ "github.com/coffeinium/chaff/internal/modules/dnssnoop"

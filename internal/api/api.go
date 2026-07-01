@@ -10,6 +10,7 @@ import (
 	"github.com/coffeinium/chaff/internal/ipc"
 	"github.com/coffeinium/chaff/internal/kernel"
 	"github.com/coffeinium/chaff/internal/model"
+	"github.com/coffeinium/chaff/internal/modules/analyzer"
 	"github.com/coffeinium/chaff/internal/modules/feedsync"
 	"github.com/coffeinium/chaff/internal/store"
 )
@@ -170,6 +171,20 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 
 	h["test"] = func(req ipc.Request) ipc.Response {
 		return testValue(k, req.Arg("value"))
+	}
+
+	h["analyzer.flows"] = func(req ipc.Request) ipc.Response {
+		fl, ok := runningModule(k, "analyzer").(interface{ Flows(int) []analyzer.Flow })
+		if !ok {
+			return ipc.Err("модуль analyzer выключен (chaff module enable analyzer)")
+		}
+		limit := 200
+		if v := req.Arg("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		return ipc.OK(fl.Flows(limit))
 	}
 
 	h["net.up"] = func(req ipc.Request) ipc.Response {
