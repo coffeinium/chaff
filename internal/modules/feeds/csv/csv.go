@@ -46,6 +46,7 @@ func (m *Module) Fetch(ctx context.Context, spec model.SourceSpec) ([]model.Indi
 	typeCol, hasType := cm["type"]
 	threatCol, hasThreat := cm["threat"]
 	noteCol, hasNote := cm["note"]
+	reviewCol, hasReview := cm["review"]
 
 	out := make([]model.Indicator, 0, len(rows))
 	for _, rec := range rows {
@@ -58,6 +59,9 @@ func (m *Module) Fetch(ctx context.Context, spec model.SourceSpec) ([]model.Indi
 			kind = model.NormalizeKind(feed.Col(rec, typeCol), value)
 		}
 		ind := model.Indicator{Value: value, Kind: kind, Action: model.ActionBlock, Scope: model.ScopeDomain}
+		if hasReview && feed.Col(rec, reviewCol) == "1" {
+			ind.Action = reviewAction(kind)
+		}
 		if hasThreat {
 			ind.Threat = feed.Col(rec, threatCol)
 		}
@@ -67,6 +71,13 @@ func (m *Module) Fetch(ctx context.Context, spec model.SourceSpec) ([]model.Indi
 		out = append(out, ind)
 	}
 	return out, nil
+}
+
+func reviewAction(k model.Kind) model.Action {
+	if k == model.KindURL {
+		return model.ActionMonitor
+	}
+	return model.ActionAllow
 }
 
 func col(cm map[string]int, key string, def int) int {
