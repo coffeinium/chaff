@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/coffeinium/chaff/internal/config"
@@ -121,6 +120,26 @@ func buildRequest(argv []string) (ipc.Request, error) {
 		flags, _ := parseFlags(rest[1:])
 		return ipc.Request{Cmd: "net." + rest[0], Args: flags}, nil
 
+	case "web":
+		if len(rest) < 1 {
+			return ipc.Request{}, fmt.Errorf("использование: chaff web token create|ls|rm [...] | web cert")
+		}
+		switch rest[0] {
+		case "token":
+			if len(rest) < 2 {
+				return ipc.Request{}, fmt.Errorf("использование: chaff web token create|ls|rm [...]")
+			}
+			flags, pos := parseFlags(rest[2:])
+			if rest[1] == "rm" && len(pos) > 0 {
+				flags["ref"] = pos[0]
+			}
+			return ipc.Request{Cmd: "web.token." + rest[1], Args: flags}, nil
+		case "cert":
+			return ipc.Request{Cmd: "web.cert"}, nil
+		default:
+			return ipc.Request{}, fmt.Errorf("использование: chaff web token ... | web cert")
+		}
+
 	default:
 		return ipc.Request{}, fmt.Errorf("неизвестная команда %q (см. `chaff help`)", group)
 	}
@@ -148,23 +167,6 @@ func parseFlags(args []string) (map[string]string, []string) {
 		pos = append(pos, a)
 	}
 	return flags, pos
-}
-
-func parseColumnMap(s string) map[string]int {
-	out := map[string]int{}
-	if s == "" {
-		return out
-	}
-	for _, pair := range strings.Split(s, ",") {
-		kv := strings.SplitN(strings.TrimSpace(pair), ":", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		if n, err := strconv.Atoi(strings.TrimSpace(kv[1])); err == nil {
-			out[strings.TrimSpace(kv[0])] = n
-		}
-	}
-	return out
 }
 
 func printData(data any) {

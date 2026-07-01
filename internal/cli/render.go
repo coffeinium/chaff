@@ -39,6 +39,8 @@ func render(group string, data any, jsonOut bool) {
 		renderStatus(asMap(data))
 	case "test":
 		renderTest(asMap(data))
+	case "web":
+		renderWeb(data)
 	default:
 		if data == nil {
 			return
@@ -94,7 +96,7 @@ func renderModules(ms []map[string]any) {
 			str(m["name"]),
 			str(m["title"]),
 			onoff(boolean(m["enabled"])),
-			run(boolean(m["running"])),
+			runCell(boolean(m["running"]), m["health"]),
 			health(m["health"]),
 		})
 	}
@@ -156,6 +158,57 @@ func renderTest(m map[string]any) {
 		vs = rOK
 	}
 	fmt.Printf("%-9s %s\n", "вердикт", vs.Render(v))
+}
+
+func renderWeb(data any) {
+	if m := asMap(data); m != nil {
+		if tok := str(m["token"]); tok != "" {
+			fmt.Println(rHdr.Render("токен создан — сохрани, больше не покажется:"))
+			fmt.Println("  " + rOK.Render(tok))
+			if intOf(m["expires_at"]) > 0 {
+				fmt.Println(rDim.Render("  истекает: " + ts(m["expires_at"])))
+			}
+			return
+		}
+		if fp := str(m["fingerprint"]); fp != "" {
+			fmt.Printf("%-12s %s\n", "сертификат", str(m["path"]))
+			fmt.Printf("%-12s %s\n", "отпечаток", fp)
+			return
+		}
+	}
+	renderTokens(rows(data))
+}
+
+func renderTokens(toks []map[string]any) {
+	if len(toks) == 0 {
+		fmt.Println(rDim.Render("токенов нет — chaff web token create"))
+		return
+	}
+	var out [][]string
+	for _, t := range toks {
+		out = append(out, []string{
+			fmt.Sprintf("%d", intOf(t["id"])),
+			str(t["name"]),
+			ts(t["created_at"]),
+			tokenExpiry(t["expires_at"]),
+			tokenLast(t["last_used"]),
+		})
+	}
+	table([]string{"id", "имя", "создан", "истекает", "исп."}, out)
+}
+
+func tokenExpiry(v any) string {
+	if intOf(v) == 0 {
+		return "никогда"
+	}
+	return ts(v)
+}
+
+func tokenLast(v any) string {
+	if intOf(v) == 0 {
+		return "—"
+	}
+	return ts(v)
 }
 
 func bridgeLine(br map[string]any) string {
@@ -280,11 +333,16 @@ func onoff(b bool) string {
 	return rOff.Render("выкл")
 }
 
-func run(b bool) string {
-	if b {
-		return rOK.Render("да")
+func runCell(running bool, health any) string {
+	if !running {
+		return rDim.Render("нет")
 	}
-	return rDim.Render("нет")
+	if m := asMap(health); m != nil {
+		if ok, has := m["ok"].(bool); has && !ok {
+			return rOff.Render("сбой")
+		}
+	}
+	return rOK.Render("да")
 }
 
 func health(v any) string {

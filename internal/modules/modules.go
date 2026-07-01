@@ -10,4 +10,5 @@ import (
 	_ "github.com/coffeinium/chaff/internal/modules/feedsync"
 	_ "github.com/coffeinium/chaff/internal/modules/ipblock"
 	_ "github.com/coffeinium/chaff/internal/modules/sniblock"
+	_ "github.com/coffeinium/chaff/internal/modules/webui"
 )

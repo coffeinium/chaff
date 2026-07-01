@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+
+	"github.com/coffeinium/chaff/internal/version"
 )
 
 const usageText = `chaff — модульный IOC-файрволл (в разрыв, bump-in-the-wire)
@@ -10,7 +12,6 @@ const usageText = `chaff — модульный IOC-файрволл (в раз�
 демон:
   chaff serve                         запустить демон (обычно через systemd)
   chaff doctor                        preflight-проверки (демон не нужен)
-  chaff tui                           интерактивный дашборд
 
 врезка:
   chaff net up --in IF --out IF       поднять мост (data-plane)
@@ -19,6 +20,11 @@ const usageText = `chaff — модульный IOC-файрволл (в раз�
 модули:
   chaff module ls
   chaff module enable NAME | disable NAME
+
+веб-панель:
+  chaff web token create [--name N] [--ttl 168h]   выпустить токен доступа
+  chaff web token ls | token rm ИМЯ|ID
+  chaff web cert                       отпечаток TLS-сертификата
 
 фиды:
   chaff source add --name N --adapter csv|text|hosts --uri U [--map indicator:0,type:1]
@@ -46,12 +52,13 @@ func Main(args []string) int {
 	case "-h", "--help", "help":
 		fmt.Print(usageText)
 		return 0
+	case "-v", "--version", "version":
+		fmt.Printf("chaff %s — %s\n", version.Version, version.Author)
+		return 0
 	case "serve":
 		return cmdServe(args[1:])
 	case "doctor":
 		return cmdDoctor(args[1:])
-	case "tui":
-		return cmdTUI(args[1:])
 	default:
 		return cmdClient(args)
 	}

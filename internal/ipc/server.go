@@ -32,6 +32,10 @@ func (s *Server) Listen() error {
 	if err != nil {
 		return err
 	}
+	if err := os.Chmod(s.path, 0o600); err != nil {
+		ln.Close()
+		return err
+	}
 	s.ln = ln
 	return nil
 }

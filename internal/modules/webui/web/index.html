@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>chaff</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login" class="login hidden">
+  <form id="login-form" class="login-box">
+    <h1>chaff</h1>
+    <p class="dim">Вход по токену. Токен выпускается из CLI:<br><code>chaff web token create</code></p>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="chaff_…">
+    <button type="submit">Войти</button>
+    <div id="login-err" class="err"></div>
+    <div id="update" class="update hidden"></div>
+    <div class="foot">
+      <span id="ver" class="dim"></span>
+      <span class="dim">© coffeinium</span>
+    </div>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <span class="brand">chaff</span>
+    <nav id="tabs"></nav>
+    <span class="spacer"></span>
+    <label class="auto"><input type="checkbox" id="auto" checked> авто</label>
+    <button id="refresh" class="ghost">↻</button>
+    <button id="logout" class="ghost">выход</button>
+  </header>
+  <div id="msg" class="msg hidden"></div>
+  <main id="view"></main>
+</div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
