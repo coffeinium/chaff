@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
 	"go4.org/netipx"
 
 	"github.com/coffeinium/chaff/internal/dataplane"
@@ -87,12 +88,45 @@ func (m *Module) applySet(want []netip.Prefix) error {
 }
 
 func (m *Module) Health() kernel.Health {
+	drops, hasDrops := dropCount()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.lastErr != nil {
-		return kernel.Health{OK: false, Detail: "ошибка: " + m.lastErr.Error(), Metrics: map[string]any{"адресов": m.count}}
+	met := map[string]any{"адресов": m.count}
+	if hasDrops {
+		met["дропов"] = drops
 	}
-	return kernel.Health{OK: true, Detail: "включена", Metrics: map[string]any{"адресов": m.count}}
+	if m.lastErr != nil {
+		return kernel.Health{OK: false, Detail: "ошибка: " + m.lastErr.Error(), Metrics: met}
+	}
+	return kernel.Health{OK: true, Detail: "включена", Metrics: met}
+}
+
+func dropCount() (uint64, bool) {
+	c, err := nftables.New()
+	if err != nil {
+		return 0, false
+	}
+	tbl := &nftables.Table{Family: nftables.TableFamilyINet, Name: dataplane.Table}
+	rules, err := c.GetRules(tbl, &nftables.Chain{Table: tbl, Name: dataplane.ChainForward})
+	if err != nil {
+		return 0, false
+	}
+	for _, r := range rules {
+		bad, cnt := false, uint64(0)
+		var have bool
+		for _, e := range r.Exprs {
+			if lk, ok := e.(*expr.Lookup); ok && lk.SetName == dataplane.SetBadV4 {
+				bad = true
+			}
+			if x, ok := e.(*expr.Counter); ok {
+				cnt, have = x.Packets, true
+			}
+		}
+		if bad && have {
+			return cnt, true
+		}
+	}
+	return 0, false
 }
 
 func desiredPrefixes(blockV4 []netip.Prefix, snoop []string, allow []netip.Prefix) []netip.Prefix {

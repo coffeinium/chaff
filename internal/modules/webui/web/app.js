@@ -202,8 +202,13 @@ function tsFmt(sec) {
 }
 
 async function viewStatus() {
-  const d = await api("status");
   const v = $("#view");
+  const [d, hits, srcs, ver] = await Promise.all([
+    api("status"),
+    api("hits", { limit: "500" }).catch(() => []),
+    api("source.ls").catch(() => []),
+    fetch("/api/version").then((r) => r.json()).then((j) => j.data).catch(() => null),
+  ]);
   v.textContent = "";
   const br = d.bridge || {};
   const mods = d.modules || [];
@@ -212,15 +217,50 @@ async function viewStatus() {
   for (const k in inds) total += inds[k];
   const brText = !br.running ? "выключен" : br.detail || (br.up ? "поднят" : "опущен");
   const brCls = !br.running ? "dim" : br.up ? "on" : "offc";
-  v.append(h("div", { class: "cards" },
+
+  const hitList = hits || [];
+  const layers = {};
+  for (const x of hitList) layers[x.layer || "?"] = (layers[x.layer || "?"] || 0) + 1;
+  const srcList = srcs || [];
+  const srcOn = srcList.filter((s) => s.enabled).length;
+
+  const ipb = mods.find((m) => m.name === "ipblock");
+  const drops = ipb && ipb.health && ipb.health.metrics ? ipb.health.metrics["дропов"] : undefined;
+
+  const cards = h("div", { class: "cards" },
     card("мост", brText, brCls),
     card("функции", mods.filter((m) => m.running).length + " / " + mods.length),
     card("индикаторы", total),
-  ));
-  const rows = Object.keys(inds).sort().map((k) =>
-    h("tr", null, h("td", { text: k || "—" }), h("td", { text: String(inds[k]) })),
+    card("срабатываний", hitList.length),
   );
-  if (rows.length) v.append(tableEl(["вид", "кол-во"], rows));
+  if (drops !== undefined) cards.append(card("IP-дропов", drops));
+  cards.append(card("источников", srcOn + " / " + srcList.length));
+  if (ver && ver.version) {
+    cards.append(card("версия", "v" + String(ver.version).replace(/^v/, ""), ver.outdated ? "offc" : "dim"));
+  }
+  v.append(cards);
+
+  const web = mods.find((m) => m.name === "webui");
+  const wm = web && web.health ? web.health.metrics : null;
+  if (wm) {
+    v.append(h("p", { class: "dim" },
+      "веб: " + (wm.url || "") + " · tls " + (wm.tls ? "вкл" : "выкл") +
+      " · сессий " + (wm.sessions ?? 0) + " · токенов " + (wm.tokens ?? 0)));
+  }
+
+  const lkeys = Object.keys(layers).sort();
+  if (lkeys.length) {
+    v.append(h("h3", { class: "subh", text: "срабатывания по слоям" }));
+    v.append(tableEl(["слой", "кол-во"], lkeys.map((k) =>
+      h("tr", null, h("td", { text: k }), h("td", { text: String(layers[k]) })))));
+  }
+
+  const ikeys = Object.keys(inds).sort();
+  if (ikeys.length) {
+    v.append(h("h3", { class: "subh", text: "индикаторы по видам" }));
+    v.append(tableEl(["вид", "кол-во"], ikeys.map((k) =>
+      h("tr", null, h("td", { text: k || "—" }), h("td", { text: String(inds[k]) })))));
+  }
 }
 
 async function viewHits() {
@@ -231,16 +271,22 @@ async function viewHits() {
     v.append(h("p", { class: "dim", text: "срабатываний нет" }));
     return;
   }
+  const layers = {};
+  for (const x of hits) layers[x.layer || "?"] = (layers[x.layer || "?"] || 0) + 1;
+  const summary = "всего " + hits.length + " · " +
+    Object.keys(layers).sort().map((k) => k + " " + layers[k]).join(" · ");
+  v.append(h("p", { class: "dim", text: summary }));
   const rows = hits.map((x) =>
     h("tr", null,
       h("td", { text: tsFmt(x.ts) }),
-      h("td", { text: x.layer || "" }),
+      h("td", null, h("span", { class: "tag", text: x.layer || "" })),
       h("td", { text: x.indicator || "" }),
       h("td", { text: x.src_ip || "" }),
+      h("td", { class: "dim", text: x.detail || "" }),
       h("td", null, indActions(x.indicator)),
     ),
   );
-  v.append(tableEl(["время", "слой", "индикатор", "источник", "действие"], rows));
+  v.append(tableEl(["время", "слой", "индикатор", "источник", "детали", "действие"], rows));
 }
 
 async function viewModules() {

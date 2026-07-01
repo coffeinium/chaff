@@ -171,6 +171,7 @@ tbody tr:hover td { background: #12151a; }
 }
 .card .k { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
 .card .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.subh { margin: 18px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); font-weight: 600; }
 
 .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
 .bar input, .bar select {

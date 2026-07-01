@@ -265,6 +265,7 @@ func (m *Module) buildRuleset(queueNum uint16) error {
 		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{nfprotoIPv4}},
 		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
 		&expr.Lookup{SourceRegister: 1, SetName: setV4.Name, SetID: setV4.ID},
+		&expr.Counter{},
 		&expr.Verdict{Kind: expr.VerdictDrop},
 	}})
 
