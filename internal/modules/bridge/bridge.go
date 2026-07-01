@@ -209,7 +209,7 @@ func (m *Module) setupBridge() error {
 		}
 		_ = netlink.LinkSetNoMaster(port)
 		if err := netlink.LinkSetMaster(port, br); err != nil {
-			return fmt.Errorf("enslave %s: %w", ifn, err)
+			return fmt.Errorf("не добавить %s в мост: %w (wifi/tun/wireguard не бриджуются, нужен ethernet-порт)", ifn, err)
 		}
 		if err := netlink.LinkSetUp(port); err != nil {
 			return fmt.Errorf("up %s: %w", ifn, err)

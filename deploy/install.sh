@@ -52,9 +52,9 @@ install_chaff() {
 
 	local TMP
 	TMP=$(mktemp)
-	trap 'rm -f "$TMP"' EXIT
 	fetch_bin "$TMP"
 	install -m0755 "$TMP" "$BIN"
+	rm -f "$TMP"
 	echo "бинарь: $BIN ($("$BIN" version))"
 
 	install -d -m0755 "$ETC"
@@ -132,9 +132,9 @@ update_chaff() {
 	echo "== обновление $cur -> $new ($(arch)) =="
 	local TMP
 	TMP=$(mktemp)
-	trap 'rm -f "$TMP"' EXIT
 	fetch_bin "$TMP"
 	install -m0755 "$TMP" "$BIN"
+	rm -f "$TMP"
 	if command -v systemctl >/dev/null; then
 		systemctl restart chaff 2>/dev/null || true
 	fi

@@ -16,104 +16,113 @@ import (
 
 func cmdDoctor(_ []string) int {
 	cfg := config.Load()
-	type check struct{ status, name, detail, fix string }
+	type check struct{ group, status, name, detail, fix string }
 	var checks []check
-	add := func(status, name, detail, fix string) {
-		checks = append(checks, check{status, name, detail, fix})
+	add := func(group, status, name, detail, fix string) {
+		checks = append(checks, check{group, status, name, detail, fix})
 	}
 
-	fmt.Printf("%s\n\n", rHdr.Render(fmt.Sprintf("chaff %s, проверка окружения", version.Version)))
+	const (
+		gAccess = "доступ и инструменты"
+		gKernel = "ядро и модули"
+		gData   = "data-plane (nftables)"
+		gStore  = "хранилище"
+		gDaemon = "демон и веб-панель"
+		gNet    = "сеть"
+	)
+
+	fmt.Println(rHdr.Render(fmt.Sprintf("chaff %s · проверка окружения", version.Version)))
 
 	root := os.Geteuid() == 0
 	if root {
-		add("OK", "права", "root", "")
+		add(gAccess, "OK", "права", "root, есть CAP_NET_ADMIN/CAP_NET_RAW", "")
 	} else {
-		add("WARN", "права", "не root; data-plane требует CAP_NET_ADMIN/CAP_NET_RAW", "запускай под root: sudo chaff ...")
+		add(gAccess, "WARN", "права", "не root; data-plane требует CAP_NET_ADMIN/CAP_NET_RAW", "запускай под root: sudo chaff ...")
 	}
-
 	nftOK := false
 	if p, err := exec.LookPath("nft"); err == nil {
 		nftOK = true
-		add("OK", "nft", p, "")
+		add(gAccess, "OK", "nft", p+" · утилита nftables", "")
 	} else {
-		add("ERR", "nft", "не найден в PATH", "поставь пакет nftables")
+		add(gAccess, "ERR", "nft", "не найден в PATH", "поставь пакет nftables")
 	}
 
 	kmods := []struct{ name, note, fix string }{
-		{"nf_tables", "ядро nftables", "sudo modprobe nf_tables"},
-		{"br_netfilter", "фильтрация на мосту", "загрузится при chaff net up"},
-		{"nf_conntrack_bridge", "conntrack на мосту", "загрузится при chaff net up"},
-		{"nfnetlink_queue", "блок по SNI", "sudo modprobe nfnetlink_queue"},
+		{"nf_tables", "движок nftables", "sudo modprobe nf_tables"},
+		{"br_netfilter", "фильтрация трафика на мосту", "загрузится при chaff net up"},
+		{"nf_conntrack_bridge", "conntrack на мосту (гейт SNI)", "загрузится при chaff net up"},
+		{"nfnetlink_queue", "блок по SNI через NFQUEUE", "sudo modprobe nfnetlink_queue"},
 	}
 	for _, km := range kmods {
 		if _, err := os.Stat("/sys/module/" + km.name); err == nil {
-			add("OK", "kmod "+km.name, "загружен", "")
+			add(gKernel, "OK", km.name, "загружен · "+km.note, "")
 		} else {
-			add("WARN", "kmod "+km.name, "не загружен ("+km.note+")", km.fix)
+			add(gKernel, "WARN", km.name, "не загружен · "+km.note, km.fix)
 		}
+	}
+	if ok, rel := kernelGE(5, 3); ok {
+		add(gKernel, "OK", "ядро", rel+" · nf_conntrack_bridge поддерживается", "")
+	} else {
+		add(gKernel, "WARN", "ядро", rel+" · нужно >= 5.3 для nf_conntrack_bridge", "обнови ядро")
+	}
+	if _, err := os.Stat("/proc/sys/net/bridge/bridge-nf-call-iptables"); err == nil {
+		add(gKernel, "OK", "bridge-nf", "sysctl доступен · br_netfilter активен", "")
+	} else {
+		add(gKernel, "WARN", "bridge-nf", "sysctl нет · br_netfilter не загружен", "sudo modprobe br_netfilter")
 	}
 
 	if root && nftOK {
 		if ok, msg := nftProbe(); ok {
-			add("OK", "nft запись", "таблица создаётся и удаляется", "")
+			add(gData, "OK", "запись в nft", "таблица создаётся и удаляется", "")
 		} else {
-			add("ERR", "nft запись", "таблицу не создать: "+msg, "нужен CAP_NET_ADMIN и рабочий nf_tables")
+			add(gData, "ERR", "запись в nft", "таблицу не создать: "+msg, "нужен CAP_NET_ADMIN и рабочий nf_tables")
 		}
-	}
-
-	if ok, rel := kernelGE(5, 3); ok {
-		add("OK", "ядро", rel, "")
+		if nftTableChaff() {
+			add(gData, "OK", "таблица inet chaff", "поднята · мост активен", "")
+		} else {
+			add(gData, "OK", "таблица inet chaff", "не создана · мост не поднят (chaff net up)", "")
+		}
 	} else {
-		add("WARN", "ядро", rel+" < 5.3; nf_conntrack_bridge может отсутствовать", "обнови ядро")
-	}
-
-	if _, err := os.Stat("/proc/sys/net/bridge/bridge-nf-call-iptables"); err == nil {
-		add("OK", "bridge-nf", "доступен (br_netfilter активен)", "")
-	} else {
-		add("WARN", "bridge-nf", "sysctl нет (br_netfilter не загружен)", "sudo modprobe br_netfilter")
+		add(gData, "WARN", "запись в nft", "пропущено · нужен root", "sudo chaff doctor")
 	}
 
 	dbDir := filepath.Dir(cfg.DBPath)
 	if writableDir(dbDir) {
-		add("OK", "каталог БД", dbDir, "")
+		add(gStore, "OK", "каталог БД", dbDir+" · запись есть", "")
 	} else {
 		status := "WARN"
 		if root {
 			status = "ERR"
 		}
-		add(status, "каталог БД", dbDir+": нет записи", "sudo install -d -m0755 "+dbDir)
+		add(gStore, status, "каталог БД", dbDir+" · нет записи", "sudo install -d -m0755 "+dbDir)
+	}
+	if s, ok := dbSummary(cfg.DBPath); ok {
+		add(gStore, "OK", "БД", s, "")
+	} else {
+		add(gStore, "OK", "БД", "ещё не создана (создастся при первом запуске)", "")
 	}
 	if !writableDir(filepath.Dir(cfg.SocketPath)) {
-		add("WARN", "каталог сокета", filepath.Dir(cfg.SocketPath)+": нет записи", "")
+		add(gStore, "WARN", "каталог сокета", filepath.Dir(cfg.SocketPath)+" · нет записи", "")
 	}
 
 	daemonUp := false
 	if _, err := ipc.Call(cfg.SocketPath, ipc.Request{Cmd: "status"}); err == nil {
 		daemonUp = true
-		add("OK", "демон", "уже запущен на "+cfg.SocketPath, "")
+		add(gDaemon, "OK", "демон", "запущен на "+cfg.SocketPath, "")
 	} else {
-		add("OK", "демон", "не запущен (chaff serve)", "")
+		add(gDaemon, "OK", "демон", "не запущен · запусти chaff serve (или systemctl start chaff)", "")
 	}
-
-	add("OK", "веб-панель", webURL(cfg), "")
+	add(gDaemon, "OK", "веб-панель", webURL(cfg), "")
 	if daemonUp {
-		add("OK", "веб-порт", cfg.WebAddr+": занят демоном chaff", "")
+		add(gDaemon, "OK", "веб-порт", cfg.WebAddr+" · занят демоном chaff", "")
 	} else if portFree(cfg.WebAddr) {
-		add("OK", "веб-порт", cfg.WebAddr+": свободен", "")
+		add(gDaemon, "OK", "веб-порт", cfg.WebAddr+" · свободен", "")
 	} else {
-		add("WARN", "веб-порт", cfg.WebAddr+": занят другим процессом", "смени CHAFF_WEB_ADDR или освободи порт")
+		add(gDaemon, "WARN", "веб-порт", cfg.WebAddr+" · занят другим процессом", "смени CHAFF_WEB_ADDR или освободи порт")
 	}
 
-	if root && nftOK && nftTableChaff() {
-		add("OK", "data-plane", "таблица inet chaff уже есть (мост поднят)", "")
-	}
-
-	if s, ok := dbSummary(cfg.DBPath); ok {
-		add("OK", "БД", s, "")
-	}
-
+	def := defaultRouteIface()
 	if ifaces, err := net.Interfaces(); err == nil {
-		def := defaultRouteIface()
 		var names []string
 		for _, i := range ifaces {
 			if i.Flags&net.FlagLoopback != 0 {
@@ -125,51 +134,87 @@ func cmdDoctor(_ []string) int {
 			}
 			names = append(names, n)
 		}
-		add("OK", "интерфейсы", strings.Join(names, ", "), "")
-		if def != "" {
-			add("OK", "аплинк", def+" (маршрут по умолчанию, не бриджуй как --in)", "")
-		}
+		add(gNet, "OK", "интерфейсы", strings.Join(names, ", "), "")
+	}
+	if def != "" {
+		add(gNet, "OK", "аплинк", def+" · маршрут по умолчанию, не бриджуй как --in", "")
 	}
 
-	hasErr := false
-	for _, c := range checks {
-		if c.status == "ERR" {
-			hasErr = true
+	groups := []string{gAccess, gKernel, gData, gStore, gDaemon, gNet}
+	for _, g := range groups {
+		var idx []int
+		for i, c := range checks {
+			if c.group == g {
+				idx = append(idx, i)
+			}
 		}
-		fmt.Printf("%s %s %s\n", statusTag(c.status), padName(c.name, 24), c.detail)
+		if len(idx) == 0 {
+			continue
+		}
+		fmt.Println("\n" + rHdr.Render(g))
+		for j, i := range idx {
+			conn := "├─"
+			if j == len(idx)-1 {
+				conn = "└─"
+			}
+			c := checks[i]
+			fmt.Printf("%s %s %s %s\n", rDim.Render(conn), glyph(c.status), padName(c.name, 20), c.detail)
+		}
 	}
+	fmt.Println("   " + rDim.Render("* маршрут по умолчанию; для врезки нужны два ethernet-порта (wifi/tun/wireguard не бриджуются)"))
 
+	ok, warn, errc := 0, 0, 0
 	var fixes []string
 	for _, c := range checks {
+		switch c.status {
+		case "OK":
+			ok++
+		case "WARN":
+			warn++
+		case "ERR":
+			errc++
+		}
 		if c.status != "OK" && c.fix != "" {
 			fixes = append(fixes, c.fix)
 		}
 	}
+
+	fmt.Println("\n" + rDim.Render(strings.Repeat("─", 52)))
+	warnB := rDim.Render(fmt.Sprintf("%d !", warn))
+	if warn > 0 {
+		warnB = rWarn.Render(fmt.Sprintf("%d !", warn))
+	}
+	errB := rDim.Render(fmt.Sprintf("%d ✗", errc))
+	if errc > 0 {
+		errB = rOff.Render(fmt.Sprintf("%d ✗", errc))
+	}
+	fmt.Printf("итог   %s   %s   %s\n", rOK.Render(fmt.Sprintf("%d ✓", ok)), warnB, errB)
+
 	if len(fixes) > 0 {
-		fmt.Println("\n" + rWarn.Render("исправить:"))
+		fmt.Println("\n" + rWarn.Render("исправить"))
 		for _, f := range fixes {
-			fmt.Printf("  · %s\n", f)
+			fmt.Println(rDim.Render("  → ") + f)
 		}
 	}
 
-	if hasErr {
+	if errc > 0 {
 		return 1
 	}
-	fmt.Println("\n" + rHdr.Render("дальше:"))
-	fmt.Println("  " + rOK.Render("chaff setup") + "                          токен веб-панели + врезка моста")
-	fmt.Println("  " + rOK.Render("chaff net up --in IF --out IF") + "        врезать мост вручную")
-	fmt.Println("  " + rOK.Render("chaff status"))
+	fmt.Println("\n" + rHdr.Render("дальше"))
+	fmt.Println(rDim.Render("  → ") + rOK.Render("chaff setup") + "  токен веб-панели + врезка моста")
+	fmt.Println(rDim.Render("  → ") + rOK.Render("chaff net up --in IF --out IF") + "  врезать мост вручную")
+	fmt.Println(rDim.Render("  → ") + rOK.Render("chaff status"))
 	return 0
 }
 
-func statusTag(s string) string {
+func glyph(s string) string {
 	switch s {
 	case "ERR":
-		return "[" + rOff.Render("ERR ") + "]"
+		return rOff.Render("✗")
 	case "WARN":
-		return "[" + rWarn.Render("WARN") + "]"
+		return rWarn.Render("!")
 	default:
-		return "[" + rOK.Render("OK  ") + "]"
+		return rOK.Render("✓")
 	}
 }
 
@@ -239,7 +284,7 @@ func dbSummary(path string) (string, bool) {
 	}
 	srcs, _ := st.ListSources()
 	toks, _ := st.ListTokens()
-	return fmt.Sprintf("индикаторов %d, источников %d, токенов %d", total, len(srcs), len(toks)), true
+	return fmt.Sprintf("индикаторов %d · источников %d · токенов %d", total, len(srcs), len(toks)), true
 }
 
 func padName(s string, w int) string {

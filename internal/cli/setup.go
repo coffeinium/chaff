@@ -68,7 +68,7 @@ func setupBridge(cfg *config.Config, st *store.Store) {
 	if err != nil {
 		fmt.Println("\n" + rHdr.Render("интерфейсы для врезки (--in / --out):"))
 		for _, x := range ifs {
-			fmt.Printf("  %s\t%s\n", x.name, rDim.Render(x.ips))
+			fmt.Printf("  %s\t%s%s\n", x.name, rDim.Render(x.ips), x.warn)
 		}
 		fmt.Println("\nподнять мост: " + rOK.Render("chaff net up --in IF --out IF"))
 		return
@@ -79,7 +79,7 @@ func setupBridge(cfg *config.Config, st *store.Store) {
 	fmt.Fprintln(tty, "\n"+rHdr.Render("врезка моста в сеть (Enter чтобы пропустить):"))
 	fmt.Fprintln(tty, "  "+rWarn.Render("ВНИМАНИЕ: не выбирай интерфейс, через который подключён (SSH/mgmt): мост его заберёт."))
 	for i, x := range ifs {
-		fmt.Fprintf(tty, "  %s) %-12s %s\n", rOK.Render(strconv.Itoa(i+1)), x.name, rDim.Render(x.ips))
+		fmt.Fprintf(tty, "  %s) %-12s %s%s\n", rOK.Render(strconv.Itoa(i+1)), x.name, rDim.Render(x.ips), x.warn)
 	}
 	in := pick(tty, r, ifs, "интерфейс ЛОКАЛКИ (--in): ")
 	if in == "" {
@@ -145,6 +145,7 @@ func applyBridge(cfg *config.Config, st *store.Store, in, out string) (bool, err
 type ifrow struct {
 	name string
 	ips  string
+	warn string
 }
 
 func ifaceRows() []ifrow {
@@ -165,9 +166,27 @@ func ifaceRows() []ifrow {
 				}
 			}
 		}
-		out = append(out, ifrow{name: i.Name, ips: strings.Join(ips, ", ")})
+		row := ifrow{name: i.Name, ips: strings.Join(ips, ", ")}
+		if !bridgeable(i.Name) {
+			row.warn = "  " + rWarn.Render("(не бриджуется)")
+		}
+		out = append(out, row)
 	}
 	return out
+}
+
+func bridgeable(name string) bool {
+	b, err := os.ReadFile("/sys/class/net/" + name + "/type")
+	if err != nil || strings.TrimSpace(string(b)) != "1" {
+		return false
+	}
+	if _, err := os.Stat("/sys/class/net/" + name + "/wireless"); err == nil {
+		return false
+	}
+	if _, err := os.Stat("/sys/class/net/" + name + "/phy80211"); err == nil {
+		return false
+	}
+	return true
 }
 
 func webURL(cfg *config.Config) string {
