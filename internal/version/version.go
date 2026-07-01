@@ -1,5 +1,5 @@
 package version
 
-var Version = "0.2.4"
+var Version = "0.2.5"
 
 const Author = "coffeinium"

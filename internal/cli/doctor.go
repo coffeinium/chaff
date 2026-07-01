@@ -22,7 +22,7 @@ func cmdDoctor(_ []string) int {
 		checks = append(checks, check{status, name, detail, fix})
 	}
 
-	fmt.Printf("chaff %s, проверка окружения\n\n", version.Version)
+	fmt.Printf("%s\n\n", rHdr.Render(fmt.Sprintf("chaff %s, проверка окружения", version.Version)))
 
 	root := os.Geteuid() == 0
 	if root {
@@ -136,7 +136,7 @@ func cmdDoctor(_ []string) int {
 		if c.status == "ERR" {
 			hasErr = true
 		}
-		fmt.Printf("[%-4s] %s %s\n", c.status, padName(c.name, 24), c.detail)
+		fmt.Printf("%s %s %s\n", statusTag(c.status), padName(c.name, 24), c.detail)
 	}
 
 	var fixes []string
@@ -146,7 +146,7 @@ func cmdDoctor(_ []string) int {
 		}
 	}
 	if len(fixes) > 0 {
-		fmt.Println("\nисправить:")
+		fmt.Println("\n" + rWarn.Render("исправить:"))
 		for _, f := range fixes {
 			fmt.Printf("  · %s\n", f)
 		}
@@ -155,13 +155,22 @@ func cmdDoctor(_ []string) int {
 	if hasErr {
 		return 1
 	}
-	fmt.Print(`
-дальше:
-  chaff setup                          токен веб-панели + врезка моста
-  chaff net up --in IF --out IF        врезать мост вручную
-  chaff status
-`)
+	fmt.Println("\n" + rHdr.Render("дальше:"))
+	fmt.Println("  " + rOK.Render("chaff setup") + "                          токен веб-панели + врезка моста")
+	fmt.Println("  " + rOK.Render("chaff net up --in IF --out IF") + "        врезать мост вручную")
+	fmt.Println("  " + rOK.Render("chaff status"))
 	return 0
+}
+
+func statusTag(s string) string {
+	switch s {
+	case "ERR":
+		return "[" + rOff.Render("ERR ") + "]"
+	case "WARN":
+		return "[" + rWarn.Render("WARN") + "]"
+	default:
+		return "[" + rOK.Render("OK  ") + "]"
+	}
 }
 
 func nftProbe() (bool, string) {

@@ -25,19 +25,19 @@ func cmdSetup(_ []string) int {
 	}
 	defer st.Close()
 
-	fmt.Printf("chaff %s: первоначальная настройка\n", version.Version)
-	fmt.Printf("  БД:    %s\n", cfg.DBPath)
-	fmt.Printf("  сокет: %s\n", cfg.SocketPath)
+	fmt.Println(rHdr.Render(fmt.Sprintf("chaff %s: первоначальная настройка", version.Version)))
+	fmt.Printf("  %s %s\n", rDim.Render("БД:   "), cfg.DBPath)
+	fmt.Printf("  %s %s\n", rDim.Render("сокет:"), cfg.SocketPath)
 
 	if err := setupToken(st); err != nil {
 		return errln("%v", err)
 	}
 	setupBridge(cfg, st)
 
-	fmt.Printf("\nвеб-панель: %s\n", webURL(cfg))
-	fmt.Println("\nдальше:")
-	fmt.Println("  chaff status")
-	fmt.Println("  chaff module ls")
+	fmt.Println("\n" + rHdr.Render("веб-панель: ") + rOK.Render(webURL(cfg)))
+	fmt.Println("\n" + rHdr.Render("дальше:"))
+	fmt.Println("  " + rOK.Render("chaff status"))
+	fmt.Println("  " + rOK.Render("chaff module ls"))
 	return 0
 }
 
@@ -47,7 +47,7 @@ func setupToken(st *store.Store) error {
 		return fmt.Errorf("токены: %w", err)
 	}
 	if len(toks) > 0 {
-		fmt.Printf("\nтокены уже есть (%d), новый не создаю (chaff web token create)\n", len(toks))
+		fmt.Println("\n" + rDim.Render(fmt.Sprintf("токены уже есть (%d), новый не создаю (chaff web token create)", len(toks))))
 		return nil
 	}
 	plain, hash, err := auth.GenerateToken()
@@ -57,8 +57,8 @@ func setupToken(st *store.Store) error {
 	if _, err := st.AddToken("setup", hash, time.Now().Unix(), 0); err != nil {
 		return fmt.Errorf("сохранить токен: %w", err)
 	}
-	fmt.Println("\nтокен веб-панели (сохрани, больше не покажется):")
-	fmt.Println("  " + plain)
+	fmt.Println("\n" + rHdr.Render("токен веб-панели (сохрани, больше не покажется):"))
+	fmt.Println("  " + rOK.Render(plain))
 	return nil
 }
 
@@ -66,45 +66,45 @@ func setupBridge(cfg *config.Config, st *store.Store) {
 	ifs := ifaceRows()
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
-		fmt.Println("\nинтерфейсы для врезки (--in / --out):")
+		fmt.Println("\n" + rHdr.Render("интерфейсы для врезки (--in / --out):"))
 		for _, x := range ifs {
-			fmt.Printf("  %s\t%s\n", x.name, x.ips)
+			fmt.Printf("  %s\t%s\n", x.name, rDim.Render(x.ips))
 		}
-		fmt.Println("\nподнять мост: chaff net up --in IF --out IF")
+		fmt.Println("\nподнять мост: " + rOK.Render("chaff net up --in IF --out IF"))
 		return
 	}
 	defer tty.Close()
 	r := bufio.NewReader(tty)
 
-	fmt.Fprintln(tty, "\nврезка моста в сеть (Enter чтобы пропустить):")
-	fmt.Fprintln(tty, "  ВНИМАНИЕ: не выбирай интерфейс, через который подключён (SSH/mgmt): мост его заберёт.")
+	fmt.Fprintln(tty, "\n"+rHdr.Render("врезка моста в сеть (Enter чтобы пропустить):"))
+	fmt.Fprintln(tty, "  "+rWarn.Render("ВНИМАНИЕ: не выбирай интерфейс, через который подключён (SSH/mgmt): мост его заберёт."))
 	for i, x := range ifs {
-		fmt.Fprintf(tty, "  %d) %-12s %s\n", i+1, x.name, x.ips)
+		fmt.Fprintf(tty, "  %s) %-12s %s\n", rOK.Render(strconv.Itoa(i+1)), x.name, rDim.Render(x.ips))
 	}
 	in := pick(tty, r, ifs, "интерфейс ЛОКАЛКИ (--in): ")
 	if in == "" {
-		fmt.Fprintln(tty, "пропущено. позже: chaff net up --in IF --out IF")
+		fmt.Fprintln(tty, rDim.Render("пропущено. позже: chaff net up --in IF --out IF"))
 		return
 	}
 	out := pick(tty, r, ifs, "интерфейс РОУТЕРА (--out): ")
 	if out == "" || out == in {
-		fmt.Fprintln(tty, "отменено (out пуст или совпадает с in)")
+		fmt.Fprintln(tty, rDim.Render("отменено (out пуст или совпадает с in)"))
 		return
 	}
 	fmt.Fprintf(tty, "поднять мост %s <-> %s? [y/N]: ", in, out)
 	ans, _ := r.ReadString('\n')
 	if strings.TrimSpace(strings.ToLower(ans)) != "y" {
-		fmt.Fprintln(tty, "отменено")
+		fmt.Fprintln(tty, rDim.Render("отменено"))
 		return
 	}
 	live, err := applyBridge(cfg, st, in, out)
 	switch {
 	case err != nil:
-		fmt.Fprintln(tty, "ошибка: "+err.Error())
+		fmt.Fprintln(tty, rOff.Render("ошибка: "+err.Error()))
 	case live:
-		fmt.Fprintln(tty, "мост поднят")
+		fmt.Fprintln(tty, rOK.Render("мост поднят"))
 	default:
-		fmt.Fprintln(tty, "сохранено, мост поднимется при старте демона")
+		fmt.Fprintln(tty, rDim.Render("сохранено, мост поднимется при старте демона"))
 	}
 }
 
@@ -123,7 +123,7 @@ func pick(tty *os.File, r *bufio.Reader, ifs []ifrow, prompt string) string {
 			return line
 		}
 	}
-	fmt.Fprintln(tty, "нет такого интерфейса, пропускаю")
+	fmt.Fprintln(tty, rDim.Render("нет такого интерфейса, пропускаю"))
 	return ""
 }
 

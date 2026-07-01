@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/coffeinium/chaff/internal/version"
 )
@@ -50,12 +51,12 @@ const usageText = `chaff, модульный IOC-файрволл (в разры
 
 func Main(args []string) int {
 	if len(args) == 0 {
-		fmt.Print(usageText)
+		printUsage()
 		return 2
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
-		fmt.Print(usageText)
+		printUsage()
 		return 0
 	case "-v", "--version", "version":
 		fmt.Printf("chaff %s, %s\n", version.Version, version.Author)
@@ -71,7 +72,18 @@ func Main(args []string) int {
 	}
 }
 
+func printUsage() {
+	for i, line := range strings.Split(usageText, "\n") {
+		t := strings.TrimRight(line, " ")
+		if t != "" && (i == 0 || (!strings.HasPrefix(line, " ") && strings.HasSuffix(t, ":"))) {
+			fmt.Println(rHdr.Render(t))
+		} else {
+			fmt.Println(line)
+		}
+	}
+}
+
 func errln(format string, a ...any) int {
-	fmt.Fprintf(os.Stderr, "ошибка: "+format+"\n", a...)
+	fmt.Fprintln(os.Stderr, rOff.Render("ошибка:")+" "+fmt.Sprintf(format, a...))
 	return 1
 }
