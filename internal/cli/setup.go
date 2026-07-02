@@ -176,6 +176,9 @@ func ifaceRows() []ifrow {
 }
 
 func bridgeable(name string) bool {
+	if _, err := os.Stat("/sys/class/net/" + name + "/bridge"); err == nil {
+		return false
+	}
 	b, err := os.ReadFile("/sys/class/net/" + name + "/type")
 	if err != nil || strings.TrimSpace(string(b)) != "1" {
 		return false

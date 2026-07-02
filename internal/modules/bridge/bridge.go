@@ -269,6 +269,17 @@ func (m *Module) buildRuleset(queueNum uint16) error {
 		&expr.Verdict{Kind: expr.VerdictDrop},
 	}})
 
+	if m.k.Config.DropQUIC {
+		c.AddRule(&nftables.Rule{Table: tbl, Chain: ch, Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{17}},
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(443)},
+			&expr.Counter{},
+			&expr.Verdict{Kind: expr.VerdictDrop},
+		}})
+	}
+
 	for _, port := range []uint16{80, 443} {
 		c.AddRule(&nftables.Rule{Table: tbl, Chain: ch, Exprs: []expr.Any{
 			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},

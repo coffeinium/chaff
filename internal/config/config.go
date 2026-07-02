@@ -17,6 +17,8 @@ type Config struct {
 	WebTLSKey      string
 	WebInsecure    bool
 	WebUpdateCheck bool
+
+	DropQUIC bool
 }
 
 func Load() *Config {
@@ -30,6 +32,7 @@ func Load() *Config {
 		WebTLSKey:      env("CHAFF_WEB_TLS_KEY", ""),
 		WebInsecure:    os.Getenv("CHAFF_WEB_INSECURE") == "1",
 		WebUpdateCheck: os.Getenv("CHAFF_WEB_NO_UPDATE_CHECK") != "1",
+		DropQUIC:       os.Getenv("CHAFF_ALLOW_QUIC") != "1",
 	}
 }
 
