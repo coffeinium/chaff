@@ -35,7 +35,15 @@
     </span>
     <nav id="tabs"></nav>
     <span class="spacer"></span>
-    <label class="auto"><input type="checkbox" id="auto" checked> авто</label>
+    <label class="auto">авто
+      <select id="auto">
+        <option value="0">выкл</option>
+        <option value="1">1с</option>
+        <option value="2" selected>2с</option>
+        <option value="5">5с</option>
+        <option value="10">10с</option>
+      </select>
+    </label>
     <button id="refresh" class="ghost">↻</button>
     <button id="logout" class="ghost">выход</button>
   </header>

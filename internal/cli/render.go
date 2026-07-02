@@ -75,18 +75,79 @@ func renderHits(hs []map[string]any) {
 		empty("пусто")
 		return
 	}
+	type grp struct {
+		layer, ind  string
+		first, last int64
+		count       int
+		ips         map[string]bool
+	}
+	m := map[string]*grp{}
+	var order []string
+	for _, hrow := range hs {
+		layer, ind := str(hrow["layer"]), str(hrow["indicator"])
+		tv := int64(intOf(hrow["ts"]))
+		key := layer + "|" + ind
+		g := m[key]
+		if g == nil {
+			g = &grp{layer: layer, ind: ind, first: tv, last: tv, ips: map[string]bool{}}
+			m[key] = g
+			order = append(order, key)
+		}
+		g.count++
+		if tv < g.first {
+			g.first = tv
+		}
+		if tv > g.last {
+			g.last = tv
+		}
+		if s := str(hrow["src_ip"]); s != "" {
+			g.ips[s] = true
+		}
+	}
+	sort.Slice(order, func(i, j int) bool { return m[order[i]].last > m[order[j]].last })
 	var out [][]string
-	for _, h := range hs {
+	for _, k := range order {
+		g := m[k]
 		out = append(out, []string{
-			ts(h["ts"]),
-			str(h["layer"]),
-			str(h["indicator"]),
-			str(h["src_ip"]),
-			action(str(h["detail"])),
+			rangeFmt(g.first, g.last),
+			g.layer,
+			g.ind,
+			fmt.Sprintf("×%d", g.count),
+			ipsShort(g.ips),
 		})
 	}
-	table([]string{"время", "слой", "индикатор", "источник", "действие"}, out)
-	footer(len(hs), "")
+	table([]string{"диапазон", "слой", "индикатор", "раз", "источники"}, out)
+	fmt.Println(rDim.Render(fmt.Sprintf("событий: %d, сайтов: %d", len(hs), len(order))))
+}
+
+func tsSec(sec int64) string {
+	if sec == 0 {
+		return ""
+	}
+	return time.Unix(sec, 0).Format("02.01 15:04:05")
+}
+
+func rangeFmt(first, last int64) string {
+	if first == 0 || first == last {
+		return tsSec(last)
+	}
+	a, b := tsSec(first), tsSec(last)
+	if a[:6] == b[:6] {
+		return a + "–" + b[6:]
+	}
+	return a + " – " + b
+}
+
+func ipsShort(set map[string]bool) string {
+	arr := make([]string, 0, len(set))
+	for ip := range set {
+		arr = append(arr, ip)
+	}
+	sort.Strings(arr)
+	if len(arr) <= 6 {
+		return strings.Join(arr, ", ")
+	}
+	return strings.Join(arr[:6], ", ") + fmt.Sprintf(" +%d", len(arr)-6)
 }
 
 func renderFlows(fs []map[string]any) {

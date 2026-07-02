@@ -264,30 +264,65 @@ async function viewStatus() {
   }
 }
 
+function rangeFmt(first, last) {
+  if (!first || first === last) return tsFmt(last);
+  const a = tsFmt(first), b = tsFmt(last);
+  if (a.slice(0, 6) === b.slice(0, 6)) return a + "–" + b.slice(6);
+  return a + " – " + b;
+}
+
+function ipsShort(set) {
+  const arr = [...set].sort();
+  if (arr.length <= 6) return arr.join(", ");
+  return arr.slice(0, 6).join(", ") + " +" + (arr.length - 6);
+}
+
 async function viewHits() {
-  const hits = (await api("hits", { limit: "200" })) || [];
-  const v = $("#view");
-  v.textContent = "";
-  if (!hits.length) {
-    v.append(h("p", { class: "dim", text: "срабатываний нет" }));
-    return;
-  }
+  const hits = (await api("hits", { limit: "500" })) || [];
   const layers = {};
-  for (const x of hits) layers[x.layer || "?"] = (layers[x.layer || "?"] || 0) + 1;
-  const summary = "всего " + hits.length + " · " +
-    Object.keys(layers).sort().map((k) => k + " " + layers[k]).join(" · ");
-  v.append(h("p", { class: "dim", text: summary }));
-  const rows = hits.map((x) =>
-    h("tr", null,
-      h("td", { text: tsFmt(x.ts) }),
-      h("td", null, h("span", { class: "tag", text: x.layer || "" })),
-      h("td", { text: x.indicator || "" }),
-      h("td", { text: x.src_ip || "" }),
-      h("td", { class: "dim", text: x.detail || "" }),
-      h("td", null, indActions(x.indicator)),
-    ),
-  );
-  v.append(tableEl(["время", "слой", "индикатор", "источник", "детали", "действие"], rows));
+  const groups = new Map();
+  for (const x of hits) {
+    layers[x.layer || "?"] = (layers[x.layer || "?"] || 0) + 1;
+    const key = (x.layer || "") + "|" + (x.indicator || "");
+    let g = groups.get(key);
+    if (!g) {
+      g = { layer: x.layer || "", indicator: x.indicator || "", first: x.ts, last: x.ts, count: 0, ips: new Set() };
+      groups.set(key, g);
+    }
+    g.count++;
+    if (x.ts < g.first) g.first = x.ts;
+    if (x.ts > g.last) g.last = x.ts;
+    if (x.src_ip) g.ips.add(x.src_ip);
+  }
+  const arr = [...groups.values()].sort((a, b) => b.last - a.last);
+  const summary = "событий " + hits.length + " · сайтов " + arr.length +
+    (arr.length ? " · " + Object.keys(layers).sort().map((k) => k + " " + layers[k]).join(" · ") : "");
+
+  let sum = document.getElementById("hits-sum");
+  let tbody = document.getElementById("hits-tbody");
+  if (!sum || !tbody) {
+    const v = $("#view");
+    v.textContent = "";
+    sum = h("p", { id: "hits-sum", class: "dim" });
+    v.append(sum);
+    const wrap = tableEl(["диапазон", "слой", "индикатор", "раз", "источники", "действие"], []);
+    wrap.querySelector("tbody").id = "hits-tbody";
+    v.append(wrap);
+    tbody = wrap.querySelector("tbody");
+  }
+  sum.textContent = summary;
+  const rows = arr.map((g) => ({
+    key: g.layer + "|" + g.indicator,
+    cells: [
+      rangeFmt(g.first, g.last),
+      { tag: g.layer },
+      g.indicator,
+      "×" + g.count,
+      ipsShort(g.ips),
+      { node: indActions(g.indicator) },
+    ],
+  }));
+  syncRows(tbody, rows);
 }
 
 function human(n) {
@@ -299,35 +334,41 @@ function human(n) {
 }
 
 async function viewFlows() {
-  const v = $("#view");
-  v.textContent = "";
   let flows;
   try {
     flows = await api("analyzer.flows", { limit: "300" });
   } catch (e) {
     if (e.message === "нужен вход") return;
+    const v = $("#view");
+    v.textContent = "";
     v.append(h("p", { class: "dim", text: "анализатор выключен, включи модуль analyzer на вкладке «Функции»" }));
     return;
   }
   flows = flows || [];
-  if (!flows.length) {
-    v.append(h("p", { class: "dim", text: "соединений пока нет" }));
-    return;
+  let tbody = document.getElementById("flows-tbody");
+  if (!tbody) {
+    const v = $("#view");
+    v.textContent = "";
+    const wrap = tableEl(["src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл.", "действие"], []);
+    wrap.querySelector("tbody").id = "flows-tbody";
+    v.append(wrap);
+    tbody = wrap.querySelector("tbody");
   }
-  const rows = flows.map((f) =>
-    h("tr", null,
-      h("td", { text: f.src_mac || "" }),
-      h("td", { text: f.src_ip || "" }),
-      h("td", null, h("span", { class: "tag", text: f.kind || "" })),
-      h("td", { text: f.dst || "" }),
-      h("td", { text: (f.proto || "") + "/" + f.port }),
-      h("td", { text: String(f.packets) }),
-      h("td", { text: human(f.bytes) }),
-      h("td", { text: tsFmt(f.last) }),
-      h("td", null, indActions(f.dst)),
-    ),
-  );
-  v.append(tableEl(["src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл.", "действие"], rows));
+  const rows = flows.map((f) => ({
+    key: (f.src_mac || "") + "|" + (f.src_ip || "") + "|" + (f.dst_ip || "") + "|" + f.port + "|" + (f.proto || ""),
+    cells: [
+      f.src_mac || "",
+      f.src_ip || "",
+      { tag: f.kind || "" },
+      f.dst || "",
+      (f.proto || "") + "/" + f.port,
+      String(f.packets),
+      human(f.bytes),
+      tsFmt(f.last),
+      { node: indActions(f.dst) },
+    ],
+  }));
+  syncRows(tbody, rows);
 }
 
 async function viewModules() {
@@ -458,22 +499,69 @@ function filterRows() {
 let autoTimer;
 function startAuto() {
   stopAuto();
-  if (!$("#auto").checked) return;
+  const sec = parseInt($("#auto").value, 10) || 0;
+  if (sec <= 0) return;
   autoTimer = setInterval(() => {
     if (document.hidden) return;
     const a = document.activeElement;
     if (a && (a.tagName === "INPUT" || a.tagName === "SELECT")) return;
     renderView();
-  }, 5000);
+  }, sec * 1000);
 }
 function stopAuto() {
   if (autoTimer) clearInterval(autoTimer);
   autoTimer = null;
 }
-$("#auto").addEventListener("change", startAuto);
+$("#auto").addEventListener("change", () => {
+  try { localStorage.setItem("chaff_auto", $("#auto").value); } catch (e) {}
+  startAuto();
+});
 $("#refresh").addEventListener("click", () => renderView());
 
+function syncRows(tbody, rows) {
+  const existing = new Map();
+  for (const tr of [...tbody.children]) existing.set(tr.dataset.k, tr);
+  const seen = new Set();
+  for (const r of rows) {
+    seen.add(r.key);
+    const tr = existing.get(r.key);
+    if (!tr) {
+      const nt = h("tr", { "data-k": r.key });
+      for (const c of r.cells) nt.append(cellNode(c));
+      tbody.append(nt);
+    } else {
+      updateCells(tr, r.cells);
+    }
+  }
+  for (const [k, tr] of existing) if (!seen.has(k)) tr.remove();
+}
+
+function cellNode(c) {
+  if (typeof c === "string") return h("td", { text: c });
+  if (c && c.tag !== undefined) return h("td", null, h("span", { class: "tag", text: c.tag }));
+  if (c && c.node) return h("td", null, c.node);
+  return h("td", null);
+}
+
+function updateCells(tr, cells) {
+  const tds = tr.children;
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i], td = tds[i];
+    if (!td) continue;
+    if (typeof c === "string") {
+      if (td.textContent !== c) td.textContent = c;
+    } else if (c && c.tag !== undefined) {
+      const s = td.firstChild;
+      if (s && s.textContent !== c.tag) s.textContent = c.tag;
+    }
+  }
+}
+
 function start() {
+  try {
+    const v = localStorage.getItem("chaff_auto");
+    if (v !== null) $("#auto").value = v;
+  } catch (e) {}
   buildTabs();
   renderView();
   startAuto();
