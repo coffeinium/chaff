@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -184,7 +185,9 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 				limit = n
 			}
 		}
-		return ipc.OK(fl.Flows(limit))
+		flows := fl.Flows(limit)
+		markBlocked(k, flows)
+		return ipc.OK(flows)
 	}
 
 	h["net.up"] = func(req ipc.Request) ipc.Response {
@@ -221,6 +224,23 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 	}
 
 	return h
+}
+
+func markBlocked(k *kernel.Kernel, flows []analyzer.Flow) {
+	ipb, _ := runningModule(k, "ipblock").(interface{ Blocked(netip.Addr) bool })
+	sni, _ := runningModule(k, "sniblock").(interface{ Verdict(string) string })
+	for i := range flows {
+		f := &flows[i]
+		if ipb != nil {
+			if a, err := netip.ParseAddr(f.DstIP); err == nil && ipb.Blocked(a) {
+				f.Blocked = true
+				continue
+			}
+		}
+		if sni != nil && f.Kind != "ip" && sni.Verdict(f.Dst) == "block" {
+			f.Blocked = true
+		}
+	}
 }
 
 func setModule(k *kernel.Kernel, name string, enabled bool) ipc.Response {

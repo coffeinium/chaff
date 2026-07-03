@@ -23,6 +23,7 @@ type Module struct {
 	k       *kernel.Kernel
 	mu      sync.Mutex
 	count   int
+	set     *netipx.IPSet
 	lastErr error
 }
 
@@ -81,10 +82,21 @@ func (m *Module) applySet(want []netip.Prefix) error {
 		m.lastErr = err
 		return err
 	}
+	var b netipx.IPSetBuilder
+	for _, p := range want {
+		b.AddPrefix(p)
+	}
+	m.set, _ = b.IPSet()
 	m.count = len(want)
 	m.lastErr = nil
 	m.k.Log.Debug("ipblock: применено", "prefixes", len(want))
 	return nil
+}
+
+func (m *Module) Blocked(ip netip.Addr) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.set != nil && m.set.Contains(ip.Unmap())
 }
 
 func (m *Module) Health() kernel.Health {

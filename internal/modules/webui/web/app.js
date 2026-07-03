@@ -356,6 +356,7 @@ async function viewFlows() {
   }
   const rows = flows.map((f) => ({
     key: (f.src_mac || "") + "|" + (f.src_ip || "") + "|" + (f.dst_ip || "") + "|" + f.port + "|" + (f.proto || ""),
+    cls: f.blocked ? "hot" : "",
     cells: [
       f.src_mac || "",
       f.src_ip || "",
@@ -526,11 +527,12 @@ function syncRows(tbody, rows) {
     seen.add(r.key);
     const tr = existing.get(r.key);
     if (!tr) {
-      const nt = h("tr", { "data-k": r.key });
+      const nt = h("tr", { "data-k": r.key, class: r.cls || null });
       for (const c of r.cells) nt.append(cellNode(c));
       tbody.append(nt);
     } else {
       updateCells(tr, r.cells);
+      if (tr.className !== (r.cls || "")) tr.className = r.cls || "";
     }
   }
   for (const [k, tr] of existing) if (!seen.has(k)) tr.remove();

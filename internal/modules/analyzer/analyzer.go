@@ -37,6 +37,7 @@ type Flow struct {
 	Bytes   uint64 `json:"bytes"`
 	First   int64  `json:"first"`
 	Last    int64  `json:"last"`
+	Blocked bool   `json:"blocked,omitempty"`
 }
 
 type flow struct {

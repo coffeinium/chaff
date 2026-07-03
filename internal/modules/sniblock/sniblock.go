@@ -176,6 +176,18 @@ func (m *Module) extractHost(p dpi.Packet) (host, layer string) {
 	return "", ""
 }
 
+func (m *Module) Verdict(host string) string {
+	switch m.decide(dpi.NormalizeHost(host)) {
+	case decBlock:
+		return "block"
+	case decMonitor:
+		return "monitor"
+	case decAllow:
+		return "allow"
+	}
+	return ""
+}
+
 func (m *Module) decide(host string) decision {
 	m.mu.Lock()
 	defer m.mu.Unlock()

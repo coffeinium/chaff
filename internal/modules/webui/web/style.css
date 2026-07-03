@@ -199,6 +199,9 @@ th {
   font-size: 11px;
 }
 tbody tr:hover td { background: #12151a; }
+tbody tr.hot td { color: var(--off); background: #170e0d; }
+tbody tr.hot:hover td { background: #1d1210; }
+tbody tr.hot .tag { border-color: #55322d; }
 
 .tag { padding: 0 6px; border: 1px solid var(--line2); font-size: 12px; }
 .t-block { border-color: #55322d; color: var(--off); }
