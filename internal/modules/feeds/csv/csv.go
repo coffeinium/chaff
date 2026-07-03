@@ -62,11 +62,11 @@ func (m *Module) Fetch(ctx context.Context, spec model.SourceSpec) ([]model.Indi
 		if hasReview && feed.Col(rec, reviewCol) == "1" {
 			ind.Action = reviewAction(kind)
 		}
-		if hasThreat {
-			ind.Threat = feed.Col(rec, threatCol)
-		}
 		if hasNote {
 			ind.Note = feed.Col(rec, noteCol)
+		}
+		if ind.Note == "" && hasThreat {
+			ind.Note = feed.Col(rec, threatCol)
 		}
 		out = append(out, ind)
 	}

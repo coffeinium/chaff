@@ -51,10 +51,14 @@ func buildRequest(argv []string) (ipc.Request, error) {
 		return ipc.Request{Cmd: group}, nil
 
 	case "list":
-		if len(rest) < 1 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff list ip|cidr|domain|url|sha256|md5")
+		kind := "all"
+		if len(rest) > 0 {
+			kind = rest[0]
 		}
-		return ipc.Request{Cmd: "list", Args: map[string]string{"kind": rest[0]}}, nil
+		return ipc.Request{Cmd: "list", Args: map[string]string{"kind": kind}}, nil
+
+	case "hosts":
+		return ipc.Request{Cmd: "hosts"}, nil
 
 	case "test":
 		if len(rest) < 1 {
@@ -98,11 +102,11 @@ func buildRequest(argv []string) (ipc.Request, error) {
 
 	case "source":
 		if len(rest) < 1 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff source add|ls|sync|enable|disable [...]")
+			return ipc.Request{}, fmt.Errorf("использование: chaff source add|ls|sync|rm|enable|disable [...]")
 		}
 		flags, pos := parseFlags(rest[1:])
 		switch rest[0] {
-		case "sync", "enable", "disable":
+		case "sync", "rm", "enable", "disable", "indicators":
 			if len(pos) > 0 {
 				flags["name"] = pos[0]
 			}

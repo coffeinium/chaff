@@ -236,7 +236,38 @@ tbody tr.hot .tag { border-color: #55322d; }
   cursor: pointer;
 }
 .bar input:focus, .bar select:focus { outline: none; border-color: var(--accent); }
+.bar input[type="file"] { border-style: dashed; color: var(--dim); }
 .actions { display: flex; gap: 6px; }
+
+button.linkish {
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-align: left;
+  word-break: break-all;
+}
+button.linkish:hover { color: #fff; }
+
+button.pen { border: none; padding: 0 4px; color: var(--dim); }
+button.pen:hover { color: var(--accent); }
+td.note input {
+  padding: 2px 6px;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  color: var(--fg);
+  font: inherit;
+  width: 100%;
+  min-width: 120px;
+}
+
+tbody tr.expand td { background: var(--panel); padding: 8px 12px; }
+tbody tr.expand:hover td { background: var(--panel); }
+tbody tr.expand table { margin-top: 4px; }
+
+.macw { display: inline-flex; gap: 6px; align-items: center; }
+.macw button { visibility: hidden; }
+tr:hover .macw button { visibility: visible; }
 
 @media (max-width: 760px) {
   header { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 10px; row-gap: 8px; }

@@ -31,11 +31,17 @@ func render(group string, data any, jsonOut bool) {
 		renderHits(rows(data))
 	case "flows":
 		renderFlows(rows(data))
+	case "hosts":
+		renderHosts(rows(data))
 	case "list", "allow", "block":
 		renderIndicators(indTitle(group), rows(data))
 	case "module":
 		renderModules(rows(data))
 	case "source":
+		if m := asMap(data); m != nil && m["items"] != nil {
+			renderSourceIndicators(m)
+			return
+		}
 		renderSources(rows(data))
 	case "status":
 		renderStatus(asMap(data))
@@ -101,6 +107,9 @@ func renderHits(hs []map[string]any) {
 			g.last = tv
 		}
 		if s := str(hrow["src_ip"]); s != "" {
+			if hn := str(hrow["src_host"]); hn != "" {
+				s = hn + " (" + s + ")"
+			}
 			g.ips[s] = true
 		}
 	}
@@ -159,6 +168,7 @@ func renderFlows(fs []map[string]any) {
 	var out [][]string
 	for _, f := range fs {
 		out = append(out, []string{
+			str(f["src_host"]),
 			str(f["src_mac"]),
 			str(f["src_ip"]),
 			str(f["kind"]),
@@ -167,10 +177,31 @@ func renderFlows(fs []map[string]any) {
 			fmt.Sprintf("%d", intOf(f["packets"])),
 			bytesH(intOf(f["bytes"])),
 			ts(f["last"]),
+			action(str(f["verdict"])),
 		})
 	}
-	table([]string{"src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл."}, out)
+	table([]string{"хост", "src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл.", "вердикт"}, out)
 	footer(len(fs), "")
+}
+
+func renderHosts(hs []map[string]any) {
+	section("имена машин")
+	if len(hs) == 0 {
+		empty("пусто (namesnoop ещё ничего не выучил)")
+		return
+	}
+	var out [][]string
+	for _, e := range hs {
+		out = append(out, []string{
+			str(e["hostname"]),
+			str(e["kind"]),
+			str(e["key"]),
+			str(e["via"]),
+			ts(e["seen_at"]),
+		})
+	}
+	table([]string{"имя", "вид", "адрес", "откуда", "обновлено"}, out)
+	footer(len(hs), "")
 }
 
 func renderIndicators(title string, in []map[string]any) {
@@ -181,16 +212,45 @@ func renderIndicators(title string, in []map[string]any) {
 	}
 	var out [][]string
 	for _, i := range in {
+		src := "вручную"
+		if intOf(i["source_id"]) != 0 {
+			src = "фид"
+		}
 		out = append(out, []string{
 			str(i["value"]),
 			str(i["kind"]),
 			action(str(i["action"])),
-			str(i["threat"]),
+			src,
 			str(i["note"]),
 		})
 	}
-	table([]string{"значение", "вид", "действие", "угроза", "причина"}, out)
+	table([]string{"значение", "вид", "действие", "откуда", "причина"}, out)
 	footer(len(in), "")
+}
+
+func renderSourceIndicators(m map[string]any) {
+	items := rows(m["items"])
+	section(fmt.Sprintf("содержимое %q", str(m["name"])))
+	if len(items) == 0 {
+		empty("пусто (chaff source sync)")
+		return
+	}
+	var out [][]string
+	for _, i := range items {
+		out = append(out, []string{
+			str(i["value"]),
+			str(i["kind"]),
+			action(str(i["action"])),
+			str(i["note"]),
+		})
+	}
+	table([]string{"значение", "вид", "действие", "причина"}, out)
+	total := intOf(m["total"])
+	if len(items) < total {
+		fmt.Println(rDim.Render(fmt.Sprintf("показано %d из %d (--limit N)", len(items), total)))
+		return
+	}
+	footer(len(items), "")
 }
 
 func renderModules(ms []map[string]any) {

@@ -71,15 +71,19 @@ chaff source add --name badips --adapter text  --uri https://example.com/badips.
 chaff source add --name ti     --adapter csv    --uri https://host/list.csv --map indicator:0,type:1
 chaff source ls
 chaff source sync
+chaff source indicators ti       # что добавляет источник
 chaff source disable badips      # выключить источник и снять его блокировки
+chaff source rm badips           # удалить источник вместе с индикаторами
 ```
 
 Что и как блокируется:
 
 ```
-chaff list ip|cidr|domain|url
+chaff list                       # все блокировки, с колонкой вида
+chaff list ip|cidr|domain|url|mac
 chaff allow add example.com --note "ложное срабатывание"
 chaff block add evil.example.com --note "фишинг"
+chaff block add aa:bb:cc:dd:ee:ff --note "заражённая машина"
 chaff test 203.0.113.10          # сработает ли и где
 chaff status
 chaff hits                       # последние срабатывания
@@ -119,12 +123,14 @@ chaff module disable webui                         # выключить пане
 
 ### Анализатор соединений
 
-Модуль `analyzer` (по умолчанию выключен): живой список соединений, кто (MAC/IP)
-куда (IP/SNI/домен) со счётчиками пакетов и байт.
+Модуль `analyzer` (по умолчанию выключен): живой список соединений, кто
+(hostname/MAC/IP) куда (IP/SNI/домен) со счётчиками пакетов и байт. Имена машин
+пассивно выучивает модуль `namesnoop` из DHCP и mDNS.
 
 ```
 chaff module enable analyzer
 chaff flows
+chaff hosts                      # выученные имена машин
 ```
 
 В веб-панели то же на вкладке «Соединения».
@@ -139,15 +145,14 @@ chaff flows
 |---|---|
 | Врезка в сеть | прозрачный мост между локальной сетью и роутером |
 | Блокировка по IP | обрывает соединения к адресам из чёрного списка |
+| Блокировка по MAC | отрезает машину от сети по её MAC-адресу |
 | Блокировка по сайтам | обрывает по имени сайта (SNI / HTTP Host) |
 | Анализ DNS | вычисляет адреса вредоносных доменов из ответов DNS |
-| Анализатор соединений | живой список потоков (MAC/IP к домену/IP) |
+| Анализатор соединений | живой список потоков (hostname/MAC/IP к домену/IP) |
+| Имена машин | пассивно узнаёт hostname клиентов из DHCP и mDNS |
 | Обновление списков | периодически тянет источники |
 | Источники: CSV / список / hosts | загружают списки из файлов и ссылок |
 | Веб-панель | управление через браузер, вход по токену из CLI |
-
-Хеши файлов (sha256/md5) принимаются в списки, но сетью не блокируются (не её
-уровень).
 
 ---
 

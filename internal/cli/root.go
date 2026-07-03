@@ -25,7 +25,8 @@ const usageText = `chaff, модульный IOC-файрволл (в разры
 
 анализатор соединений (по умолчанию выключен):
   chaff module enable analyzer
-  chaff flows [N]                      живые соединения: src(mac/ip) → dst(ip/sni/домен)
+  chaff flows [N]                      живые соединения: кто (hostname/mac/ip) куда (ip/sni/домен)
+  chaff hosts                          имена машин, выученные из DHCP/mDNS
 
 веб-панель:
   chaff web token create [--name N] [--ttl 168h]   выпустить токен доступа
@@ -34,11 +35,12 @@ const usageText = `chaff, модульный IOC-файрволл (в разры
 
 фиды:
   chaff source add --name N --adapter csv|text|hosts --uri U [--map indicator:0,type:1]
-  chaff source ls | source sync
+  chaff source ls | source sync | source rm NAME
+  chaff source indicators NAME [--limit N]   что добавляет источник
   chaff source enable NAME | source disable NAME
 
 индикаторы:
-  chaff list ip|cidr|domain|url|sha256|md5
+  chaff list [ip|cidr|domain|url|mac]  все блокировки или только вид
   chaff allow add VALUE [--note ПРИЧИНА] | allow rm VALUE | allow ls
   chaff block add VALUE [--note ПРИЧИНА] | block rm VALUE | block ls
   chaff apply

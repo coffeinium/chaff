@@ -13,8 +13,7 @@ const (
 	KindCIDR    Kind = "cidr"
 	KindDomain  Kind = "domain"
 	KindURL     Kind = "url"
-	KindSHA256  Kind = "sha256"
-	KindMD5     Kind = "md5"
+	KindMAC     Kind = "mac"
 	KindUnknown Kind = ""
 )
 
@@ -39,7 +38,6 @@ type Indicator struct {
 	Kind      Kind   `json:"kind"`
 	Action    Action `json:"action"`
 	Scope     Scope  `json:"scope"`
-	Threat    string `json:"threat,omitempty"`
 	Note      string `json:"note,omitempty"`
 	SourceID  int64  `json:"source_id"`
 	FirstSeen int64  `json:"first_seen"`
@@ -61,6 +59,7 @@ type Ruleset struct {
 	Rev     int64
 	IPv4    []netip.Prefix
 	IPv6    []netip.Prefix
+	MACs    []string
 	Domains []DomainRule
 	URLs    []URLRule
 	Allow   AllowSet
@@ -70,13 +69,11 @@ type DomainRule struct {
 	Domain string
 	Scope  Scope
 	Action Action
-	Threat string
 }
 
 type URLRule struct {
 	URL    string
 	Action Action
-	Threat string
 }
 
 type AllowSet struct {
@@ -87,6 +84,7 @@ type AllowSet struct {
 var (
 	reHex64 = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 	reHex32 = regexp.MustCompile(`^[a-fA-F0-9]{32}$`)
+	reMAC   = regexp.MustCompile(`^[a-fA-F0-9]{2}([:-][a-fA-F0-9]{2}){5}$`)
 )
 
 func Classify(v string) Kind {
@@ -95,10 +93,10 @@ func Classify(v string) Kind {
 		return KindUnknown
 	}
 	switch {
-	case reHex64.MatchString(v):
-		return KindSHA256
-	case reHex32.MatchString(v):
-		return KindMD5
+	case reMAC.MatchString(v):
+		return KindMAC
+	case reHex64.MatchString(v), reHex32.MatchString(v):
+		return KindUnknown
 	}
 	if strings.Contains(v, "://") {
 		return KindURL
@@ -127,10 +125,14 @@ func NormalizeKind(token, value string) Kind {
 		return KindDomain
 	case "url", "uri", "link":
 		return KindURL
-	case "sha256":
-		return KindSHA256
-	case "md5":
-		return KindMD5
+	case "mac", "mac-src", "ether":
+		return KindMAC
+	case "sha256", "md5", "sha1", "hash", "filehash":
+		return KindUnknown
 	}
 	return Classify(value)
+}
+
+func NormalizeMAC(v string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(v), "-", ":"))
 }

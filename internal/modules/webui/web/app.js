@@ -121,9 +121,9 @@ const VIEWS = [
   ["sources", "Списки"],
   ["indicators", "Блокировки"],
 ];
-const KINDS = ["ip", "cidr", "domain", "url"];
+const KINDS = ["все", "ip", "cidr", "domain", "url", "mac"];
 let current = "status";
-let indKind = "ip";
+let indKind = "все";
 let indQuery = "";
 
 function buildTabs() {
@@ -187,12 +187,43 @@ function runState(m) {
   return h("span", { class: "on", text: "да" });
 }
 
-function indActions(value) {
-  return h("div", { class: "actions" },
-    h("button", { class: "sm danger", text: "block", onclick: () => run(() => api("block.add", { value })) }),
-    h("button", { class: "sm", text: "allow", onclick: () => run(() => api("allow.add", { value })) }),
-    h("button", { class: "sm mut", text: "снять", onclick: () => run(() => api("block.rm", { value })) }),
-  );
+function indActions(value, state, canClear = true) {
+  const blockB = h("button", { class: "sm danger", text: "block", onclick: () => run(() => api("block.add", { value })) });
+  const allowB = h("button", { class: "sm", text: "allow", onclick: () => run(() => api("allow.add", { value })) });
+  const clearB = h("button", { class: "sm mut", text: "снять", onclick: () => run(() => api("block.rm", { value })) });
+  const el = h("div", { class: "actions" });
+  if (state === "block") el.append(allowB);
+  else if (state === "allow") el.append(blockB);
+  else el.append(blockB, allowB);
+  if (state && canClear) el.append(clearB);
+  return el;
+}
+
+function noteCell(i) {
+  const td = h("td", { class: "note" });
+  const show = () => {
+    td.textContent = "";
+    td.append(
+      h("span", { text: i.note || "" }),
+      h("button", {
+        class: "sm ghost pen", text: "✎", title: "изменить причину",
+        onclick: () => {
+          const inp = h("input", { value: i.note || "" });
+          inp.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+              i.note = inp.value.trim();
+              run(() => api("ind.note", { id: String(i.id), note: i.note }));
+            } else if (e.key === "Escape") show();
+          });
+          td.textContent = "";
+          td.append(inp);
+          inp.focus();
+        },
+      }),
+    );
+  };
+  show();
+  return td;
 }
 
 function tsFmt(sec) {
@@ -286,13 +317,13 @@ async function viewHits() {
     const key = (x.layer || "") + "|" + (x.indicator || "");
     let g = groups.get(key);
     if (!g) {
-      g = { layer: x.layer || "", indicator: x.indicator || "", first: x.ts, last: x.ts, count: 0, ips: new Set() };
+      g = { layer: x.layer || "", indicator: x.indicator || "", first: x.ts, last: x.ts, count: 0, ips: new Set(), action: x.action || "" };
       groups.set(key, g);
     }
     g.count++;
     if (x.ts < g.first) g.first = x.ts;
     if (x.ts > g.last) g.last = x.ts;
-    if (x.src_ip) g.ips.add(x.src_ip);
+    if (x.src_ip) g.ips.add(x.src_host ? x.src_host + " (" + x.src_ip + ")" : x.src_ip);
   }
   const arr = [...groups.values()].sort((a, b) => b.last - a.last);
   const summary = "событий " + hits.length + " · сайтов " + arr.length +
@@ -319,7 +350,7 @@ async function viewHits() {
       g.indicator,
       "×" + g.count,
       ipsShort(g.ips),
-      { node: indActions(g.indicator) },
+      { node: indActions(g.indicator, g.action), sig: g.action },
     ],
   }));
   syncRows(tbody, rows);
@@ -349,7 +380,7 @@ async function viewFlows() {
   if (!tbody) {
     const v = $("#view");
     v.textContent = "";
-    const wrap = tableEl(["src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл.", "действие"], []);
+    const wrap = tableEl(["хост", "src mac", "src ip", "вид", "назначение", "proto", "пакетов", "байт", "посл.", "действие"], []);
     wrap.querySelector("tbody").id = "flows-tbody";
     v.append(wrap);
     tbody = wrap.querySelector("tbody");
@@ -358,7 +389,8 @@ async function viewFlows() {
     key: (f.src_mac || "") + "|" + (f.src_ip || "") + "|" + (f.dst_ip || "") + "|" + f.port + "|" + (f.proto || ""),
     cls: f.blocked ? "hot" : "",
     cells: [
-      f.src_mac || "",
+      f.src_host || "",
+      macCell(f),
       f.src_ip || "",
       { tag: f.kind || "" },
       f.dst || "",
@@ -366,10 +398,21 @@ async function viewFlows() {
       String(f.packets),
       human(f.bytes),
       tsFmt(f.last),
-      { node: indActions(f.dst) },
+      { node: indActions(f.dst, f.src_blocked ? "" : f.verdict), sig: f.src_blocked ? "" : f.verdict || "" },
     ],
   }));
   syncRows(tbody, rows);
+}
+
+function macCell(f) {
+  if (!f.src_mac) return "";
+  const btn = f.src_blocked
+    ? h("button", { class: "sm", text: "разбл", title: "разблокировать клиента", onclick: () => run(() => api("allow.add", { value: f.src_mac })) })
+    : h("button", { class: "sm mut", text: "блок", title: "заблокировать клиента по mac", onclick: () => run(() => api("block.add", { value: f.src_mac })) });
+  return {
+    node: h("span", { class: "macw" }, f.src_mac, btn),
+    sig: f.src_mac + "|" + (f.src_blocked ? 1 : 0),
+  };
 }
 
 async function viewModules() {
@@ -403,6 +446,7 @@ async function viewSources() {
     h("button", { text: "синхронизировать", onclick: () => run(() => api("source.sync")) }),
     h("button", { class: "ghost", text: "применить", onclick: () => run(() => api("apply")) }),
   ));
+
   const nameI = h("input", { placeholder: "имя" });
   const adaptI = h("select", null, ...["csv", "text", "hosts"].map((a) => h("option", { value: a, text: a })));
   const uriI = h("input", { placeholder: "uri (файл или ссылка)" });
@@ -417,26 +461,106 @@ async function viewSources() {
       }),
     }),
   ));
+
+  const fileI = h("input", { type: "file" });
+  const nameU = h("input", { placeholder: "имя (или из файла)" });
+  const adaptU = h("select", null, ...["csv", "text", "hosts"].map((a) => h("option", { value: a, text: a })));
+  const mapU = h("input", { placeholder: "map csv: indicator:0,type:1" });
+  v.append(h("div", { class: "bar" }, fileI, nameU, adaptU, mapU,
+    h("button", {
+      text: "загрузить файл",
+      onclick: () => run(async () => {
+        if (!fileI.files.length) throw new Error("выбери файл");
+        const fd = new FormData();
+        fd.append("file", fileI.files[0]);
+        fd.append("name", nameU.value.trim());
+        fd.append("adapter", adaptU.value);
+        fd.append("map", mapU.value.trim());
+        const r = await fetch("/api/upload", { method: "POST", body: fd });
+        if (r.status === 401) { showLogin(); throw new Error("нужен вход"); }
+        const j = await r.json().catch(() => ({ ok: false, error: "плохой ответ" }));
+        if (!j.ok) throw new Error(j.error || "ошибка загрузки");
+        fileI.value = ""; nameU.value = ""; mapU.value = "";
+        return j.data;
+      }),
+    }),
+  ));
+
   if (!srcs.length) {
     v.append(h("p", { class: "dim", text: "источников нет" }));
     return;
   }
-  const rows = srcs.map((s) =>
-    h("tr", null,
+  const rows = srcs.map((s) => {
+    const tr = h("tr", null,
       h("td", { text: s.name }),
       h("td", { text: s.adapter }),
       h("td", null, onoff(s.enabled)),
-      h("td", { text: s.uri || "" }),
+      h("td", null, s.uri
+        ? h("button", { class: "linkish", text: s.uri, title: "показать содержимое", onclick: () => toggleSource(tr, s) })
+        : ""),
       h("td", null,
-        h("button", {
-          class: "sm " + (s.enabled ? "mut" : ""),
-          text: s.enabled ? "выключить" : "включить",
-          onclick: () => run(() => api(s.enabled ? "source.disable" : "source.enable", { name: s.name })),
-        }),
+        h("div", { class: "actions" },
+          h("button", {
+            class: "sm " + (s.enabled ? "mut" : ""),
+            text: s.enabled ? "выключить" : "включить",
+            onclick: () => run(() => api(s.enabled ? "source.disable" : "source.enable", { name: s.name })),
+          }),
+          sourceDelBtn(s),
+        ),
       ),
+    );
+    return tr;
+  });
+  v.append(tableEl(["имя", "адаптер", "вкл", "файл / ссылка", ""], rows));
+}
+
+function sourceDelBtn(s) {
+  const b = h("button", { class: "sm mut", text: "удалить" });
+  b.addEventListener("click", () => {
+    if (b.dataset.arm) {
+      run(() => api("source.rm", { id: String(s.id) }));
+      return;
+    }
+    b.dataset.arm = "1";
+    b.textContent = "точно?";
+    b.classList.add("danger");
+    setTimeout(() => {
+      b.dataset.arm = "";
+      b.textContent = "удалить";
+      b.classList.remove("danger");
+    }, 3000);
+  });
+  return b;
+}
+
+async function toggleSource(tr, s) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains("expand")) {
+    next.remove();
+    return;
+  }
+  let d;
+  try {
+    d = await api("source.indicators", { id: String(s.id) });
+  } catch (e) {
+    if (e.message !== "нужен вход") msg(e.message, "bad");
+    return;
+  }
+  const items = d.items || [];
+  const cols = tr.children.length;
+  const inner = items.map((i) =>
+    h("tr", null,
+      h("td", { text: i.value }),
+      h("td", null, h("span", { class: "tag", text: i.kind || "" })),
+      h("td", null, actionTag(i.action)),
+      noteCell(i),
     ),
   );
-  v.append(tableEl(["имя", "адаптер", "вкл", "источник", ""], rows));
+  const body = h("td", { colspan: String(cols) },
+    h("p", { class: "dim", text: "содержимое «" + s.name + "»: " + (items.length < d.total ? "показано " + items.length + " из " + d.total : "записей " + d.total) }),
+    items.length ? tableEl(["значение", "тип", "действие", "причина"], inner) : h("p", { class: "dim", text: "пусто (сделай синхронизацию)" }),
+  );
+  tr.after(h("tr", { class: "expand" }, body));
 }
 
 async function viewIndicators() {
@@ -470,19 +594,20 @@ async function viewIndicators() {
     }),
   ));
 
-  const inds = (await api("list", { kind: indKind })) || [];
+  const inds = (await api("list", { kind: indKind === "все" ? "all" : indKind })) || [];
   const rows = inds.map((i) => {
     const tr = h("tr", null,
       h("td", { text: i.value }),
+      h("td", null, h("span", { class: "tag", text: i.kind || "" })),
       h("td", null, actionTag(i.action)),
-      h("td", { text: i.threat || "" }),
-      h("td", { text: i.note || "" }),
-      h("td", null, indActions(i.value)),
+      h("td", { class: "dim", text: i.source_id ? "фид" : "вручную" }),
+      noteCell(i),
+      h("td", null, indActions(i.value, i.action, i.source_id === 0)),
     );
     tr.dataset.val = (i.value || "").toLowerCase();
     return tr;
   });
-  const wrap = tableEl(["значение", "действие", "угроза", "причина", ""], rows);
+  const wrap = tableEl(["значение", "тип", "действие", "откуда", "причина", ""], rows);
   wrap.querySelector("table").id = "ind-table";
   v.append(wrap);
   filterRows();
@@ -541,7 +666,11 @@ function syncRows(tbody, rows) {
 function cellNode(c) {
   if (typeof c === "string") return h("td", { text: c });
   if (c && c.tag !== undefined) return h("td", null, h("span", { class: "tag", text: c.tag }));
-  if (c && c.node) return h("td", null, c.node);
+  if (c && c.node) {
+    const td = h("td", null, c.node);
+    if (c.sig !== undefined) td.dataset.sig = String(c.sig);
+    return td;
+  }
   return h("td", null);
 }
 
@@ -555,6 +684,10 @@ function updateCells(tr, cells) {
     } else if (c && c.tag !== undefined) {
       const s = td.firstChild;
       if (s && s.textContent !== c.tag) s.textContent = c.tag;
+    } else if (c && c.node && c.sig !== undefined && td.dataset.sig !== String(c.sig)) {
+      td.textContent = "";
+      td.append(c.node);
+      td.dataset.sig = String(c.sig);
     }
   }
 }

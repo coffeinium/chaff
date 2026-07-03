@@ -40,6 +40,26 @@ func (s *Store) EnabledSources() ([]model.SourceSpec, error) {
 	return scanSources(rows)
 }
 
+func (s *Store) RemoveSource(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM indicators WHERE source_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sources WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) UpdateSourceURI(id int64, uri string) error {
+	_, err := s.db.Exec(`UPDATE sources SET uri = ? WHERE id = ?`, uri, id)
+	return err
+}
+
 func (s *Store) SetSourceEnabled(id int64, enabled bool) error {
 	v := 0
 	if enabled {

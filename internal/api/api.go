@@ -40,6 +40,7 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 		if err != nil {
 			return ipc.Err(err.Error())
 		}
+		enrichHits(st, hits)
 		return ipc.OK(hits)
 	}
 
@@ -92,13 +93,73 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 	h["source.disable"] = func(req ipc.Request) ipc.Response {
 		return setSource(k, req, false)
 	}
+	h["source.rm"] = func(req ipc.Request) ipc.Response {
+		spec, err := resolveSource(st, req)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		if err := st.RemoveSource(spec.ID); err != nil {
+			return ipc.Err(err.Error())
+		}
+		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "source.rm"})
+		return ipc.OK(fmt.Sprintf("источник %q удалён вместе с индикаторами", spec.Name))
+	}
+	h["source.indicators"] = func(req ipc.Request) ipc.Response {
+		spec, err := resolveSource(st, req)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		limit := 500
+		if v := req.Arg("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		inds, total, err := st.ListBySource(spec.ID, limit)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(map[string]any{"name": spec.Name, "total": total, "items": inds})
+	}
 
 	h["list"] = func(req ipc.Request) ipc.Response {
-		inds, err := st.ListByKind(model.Kind(req.Arg("kind")))
+		kind := req.Arg("kind")
+		var (
+			inds []model.Indicator
+			err  error
+		)
+		if kind == "" || kind == "all" {
+			inds, err = st.ListAll()
+		} else {
+			inds, err = st.ListByKind(model.Kind(kind))
+		}
 		if err != nil {
 			return ipc.Err(err.Error())
 		}
 		return ipc.OK(inds)
+	}
+
+	h["ind.note"] = func(req ipc.Request) ipc.Response {
+		id, err := strconv.ParseInt(req.Arg("id"), 10, 64)
+		if err != nil || id <= 0 {
+			return ipc.Err("нужен id индикатора")
+		}
+		n, err := st.UpdateNote(id, req.Arg("note"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		if n == 0 {
+			return ipc.Err(fmt.Sprintf("индикатор id=%d не найден", id))
+		}
+		return ipc.OK("причина обновлена")
+	}
+
+	h["hosts"] = func(_ ipc.Request) ipc.Response {
+		entries, err := st.ListHostnames()
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(entries)
 	}
 
 	h["apply"] = func(_ ipc.Request) ipc.Response {
@@ -112,6 +173,9 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 		v := req.Arg("value")
 		if v == "" {
 			return ipc.Err("использование: chaff allow add VALUE")
+		}
+		if model.Classify(v) == model.KindUnknown {
+			return ipc.Err("не распознан вид значения (ip/cidr/домен/url/mac)")
 		}
 		if err := st.AddManual(v, model.KindUnknown, model.ActionAllow, req.Arg("note")); err != nil {
 			return ipc.Err(err.Error())
@@ -143,6 +207,9 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 		v := req.Arg("value")
 		if v == "" {
 			return ipc.Err("использование: chaff block add VALUE")
+		}
+		if model.Classify(v) == model.KindUnknown {
+			return ipc.Err("не распознан вид значения (ip/cidr/домен/url/mac)")
 		}
 		if err := st.AddManual(v, model.KindUnknown, model.ActionBlock, req.Arg("note")); err != nil {
 			return ipc.Err(err.Error())
@@ -186,7 +253,8 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 			}
 		}
 		flows := fl.Flows(limit)
-		markBlocked(k, flows)
+		markVerdicts(k, flows)
+		enrichFlows(st, flows)
 		return ipc.OK(flows)
 	}
 
@@ -226,21 +294,77 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 	return h
 }
 
-func markBlocked(k *kernel.Kernel, flows []analyzer.Flow) {
+func markVerdicts(k *kernel.Kernel, flows []analyzer.Flow) {
 	ipb, _ := runningModule(k, "ipblock").(interface{ Blocked(netip.Addr) bool })
+	mac, _ := runningModule(k, "macblock").(interface{ Blocked(string) bool })
 	sni, _ := runningModule(k, "sniblock").(interface{ Verdict(string) string })
 	for i := range flows {
 		f := &flows[i]
+		if mac != nil && f.SrcMAC != "" && mac.Blocked(f.SrcMAC) {
+			f.SrcBlocked, f.Verdict, f.Blocked = true, "block", true
+			continue
+		}
 		if ipb != nil {
 			if a, err := netip.ParseAddr(f.DstIP); err == nil && ipb.Blocked(a) {
-				f.Blocked = true
+				f.Verdict, f.Blocked = "block", true
 				continue
 			}
 		}
-		if sni != nil && f.Kind != "ip" && sni.Verdict(f.Dst) == "block" {
-			f.Blocked = true
+		if sni != nil && f.Kind != "ip" {
+			if v := sni.Verdict(f.Dst); v != "" {
+				f.Verdict, f.Blocked = v, v == "block"
+			}
 		}
 	}
+}
+
+func enrichFlows(st *store.Store, flows []analyzer.Flow) {
+	byMAC, byIP, err := st.Hostnames()
+	if err != nil {
+		return
+	}
+	for i := range flows {
+		f := &flows[i]
+		if h := byMAC[f.SrcMAC]; h != "" {
+			f.SrcHost = h
+			continue
+		}
+		f.SrcHost = byIP[f.SrcIP]
+	}
+}
+
+func enrichHits(st *store.Store, hits []store.Hit) {
+	_, byIP, _ := st.Hostnames()
+	actions := map[string]string{}
+	for i := range hits {
+		h := &hits[i]
+		if h.SrcIP != "" {
+			h.SrcHost = byIP[h.SrcIP]
+		}
+		act, ok := actions[h.Indicator]
+		if !ok {
+			act = currentAction(st, h.Indicator)
+			if act == "" && (h.Detail == "block" || h.Detail == "monitor") {
+				act = h.Detail
+			}
+			actions[h.Indicator] = act
+		}
+		h.Action = act
+	}
+}
+
+func currentAction(st *store.Store, value string) string {
+	matches, _ := st.Lookup(value)
+	act := ""
+	for _, m := range matches {
+		if m.SourceID == store.ManualSourceID {
+			return string(m.Action)
+		}
+		if act == "" {
+			act = string(m.Action)
+		}
+	}
+	return act
 }
 
 func setModule(k *kernel.Kernel, name string, enabled bool) ipc.Response {
@@ -271,25 +395,23 @@ func testValue(k *kernel.Kernel, value string) ipc.Response {
 		return ipc.Err("использование: chaff test VALUE")
 	}
 	kind := model.Classify(value)
+	if kind == model.KindMAC {
+		value = model.NormalizeMAC(value)
+	}
 	layer := "нет"
 	switch kind {
 	case model.KindIP, model.KindCIDR:
 		layer = "L3/L4 (ipblock)"
+	case model.KindMAC:
+		layer = "L2 (macblock)"
 	case model.KindDomain, model.KindURL:
 		layer = "L7 инлайн (sniblock)"
-	case model.KindSHA256, model.KindMD5:
-		layer = "нет, хеш файла не дело сетевого файрволла"
 	}
 	verdict := "нет совпадения"
 	matches, _ := k.Store.Lookup(value)
 	for _, m := range matches {
 		verdict = string(m.Action)
 		break
-	}
-	if kind == model.KindSHA256 || kind == model.KindMD5 {
-		if verdict != "нет совпадения" {
-			verdict = "хранится (на сетевом уровне не enforce'ится)"
-		}
 	}
 	return ipc.OK(map[string]any{
 		"value":   value,

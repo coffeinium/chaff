@@ -1,18 +1,29 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/coffeinium/chaff/internal/api"
 	"github.com/coffeinium/chaff/internal/auth"
+	"github.com/coffeinium/chaff/internal/bus"
 	"github.com/coffeinium/chaff/internal/ipc"
 	"github.com/coffeinium/chaff/internal/kernel"
+	"github.com/coffeinium/chaff/internal/model"
+	"github.com/coffeinium/chaff/internal/modules/feedsync"
 )
 
-const maxAPIBody = 1 << 20
+const (
+	maxAPIBody    = 1 << 20
+	maxUploadBody = 64 << 20
+)
 
 func buildHandler(k *kernel.Kernel, am *auth.Manager, upd *updater) http.Handler {
 	handlers := api.Handlers(k)
@@ -23,9 +34,112 @@ func buildHandler(k *kernel.Kernel, am *auth.Manager, upd *updater) http.Handler
 	mux.Handle("POST /api/logout", am.Require(am.LogoutHandler()))
 	mux.Handle("GET /api/me", am.Require(am.MeHandler()))
 	mux.Handle("POST /api/cmd/", am.Require(cmdHandler(handlers)))
+	mux.Handle("POST /api/upload", am.Require(uploadHandler(k)))
 	mux.Handle("GET /", http.FileServerFS(assetsFS()))
 
 	return securityHeaders(mux)
+}
+
+func uploadHandler(k *kernel.Kernel) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !auth.SameOrigin(r) {
+			writeResp(w, http.StatusForbidden, ipc.Err("запрещённый origin"))
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBody)
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
+			writeResp(w, http.StatusOK, ipc.Err("файл не принят: "+err.Error()))
+			return
+		}
+		file, hdr, err := r.FormFile("file")
+		if err != nil {
+			writeResp(w, http.StatusOK, ipc.Err("нет файла в запросе"))
+			return
+		}
+		defer file.Close()
+
+		name := strings.TrimSpace(r.FormValue("name"))
+		if name == "" {
+			name = strings.TrimSuffix(filepath.Base(hdr.Filename), filepath.Ext(hdr.Filename))
+		}
+		adapter := strings.TrimSpace(r.FormValue("adapter"))
+		if adapter == "" {
+			adapter = "text"
+		}
+
+		dir := filepath.Join(filepath.Dir(k.Config.DBPath), "feeds")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			writeResp(w, http.StatusOK, ipc.Err(err.Error()))
+			return
+		}
+		dst := filepath.Join(dir, sanitizeName(name)+filepath.Ext(hdr.Filename))
+		out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+		if err != nil {
+			writeResp(w, http.StatusOK, ipc.Err(err.Error()))
+			return
+		}
+		if _, err := io.Copy(out, file); err != nil {
+			out.Close()
+			writeResp(w, http.StatusOK, ipc.Err(err.Error()))
+			return
+		}
+		out.Close()
+
+		if specs, err := k.Store.ListSources(); err == nil {
+			for _, s := range specs {
+				if s.Name == name {
+					if err := k.Store.RemoveSource(s.ID); err != nil {
+						writeResp(w, http.StatusOK, ipc.Err(err.Error()))
+						return
+					}
+					break
+				}
+			}
+		}
+		spec := model.SourceSpec{Name: name, Adapter: adapter, URI: dst, ColumnMap: parseColumnMap(r.FormValue("map"))}
+		if _, err := k.Store.AddSource(spec); err != nil {
+			writeResp(w, http.StatusOK, ipc.Err(err.Error()))
+			return
+		}
+		n, err := feedsync.Run(context.Background(), k)
+		if err != nil {
+			writeResp(w, http.StatusOK, ipc.Err("файл сохранён, но синк не удался: "+err.Error()))
+			return
+		}
+		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: "upload"})
+		writeResp(w, http.StatusOK, ipc.OK(fmt.Sprintf("источник %q загружен, синхронизировано индикаторов: %d", name, n)))
+	}
+}
+
+func sanitizeName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "feed"
+	}
+	return b.String()
+}
+
+func parseColumnMap(s string) map[string]int {
+	out := map[string]int{}
+	for _, pair := range strings.Split(s, ",") {
+		kv := strings.SplitN(strings.TrimSpace(pair), ":", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSpace(kv[1]), "%d", &n); err == nil {
+			out[strings.TrimSpace(kv[0])] = n
+		}
+	}
+	return out
 }
 
 func cmdHandler(handlers map[string]ipc.Handler) http.HandlerFunc {

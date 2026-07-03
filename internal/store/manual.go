@@ -12,6 +12,9 @@ func (s *Store) AddManual(value string, kind model.Kind, action model.Action, no
 	if kind == model.KindUnknown {
 		kind = model.Classify(value)
 	}
+	if kind == model.KindMAC {
+		value = model.NormalizeMAC(value)
+	}
 	now := time.Now().Unix()
 	_, err := s.db.Exec(`
 		INSERT INTO indicators (value, kind, action, scope, note, source_id, first_seen, last_seen, enabled)
@@ -26,6 +29,9 @@ func (s *Store) AddManual(value string, kind model.Kind, action model.Action, no
 }
 
 func (s *Store) RemoveManual(value string) (int64, error) {
+	if model.Classify(value) == model.KindMAC {
+		value = model.NormalizeMAC(value)
+	}
 	res, err := s.db.Exec(`DELETE FROM indicators WHERE value = ? AND source_id = ?`, value, ManualSourceID)
 	if err != nil {
 		return 0, err
@@ -35,7 +41,7 @@ func (s *Store) RemoveManual(value string) (int64, error) {
 
 func (s *Store) ListManual(action model.Action) ([]model.Indicator, error) {
 	rows, err := s.db.Query(`
-		SELECT id, value, kind, action, scope, threat, note, source_id,
+		SELECT id, value, kind, action, scope, note, source_id,
 		       first_seen, last_seen, expires_at, enabled
 		FROM indicators WHERE source_id = ? AND action = ? ORDER BY value`,
 		ManualSourceID, string(action))

@@ -245,6 +245,14 @@ func (m *Module) buildRuleset(queueNum uint16) error {
 	if err := c.AddSet(setV4, nil); err != nil {
 		return err
 	}
+	setMAC := &nftables.Set{
+		Table:   tbl,
+		Name:    dataplane.SetBadMAC,
+		KeyType: nftables.TypeEtherAddr,
+	}
+	if err := c.AddSet(setMAC, nil); err != nil {
+		return err
+	}
 	ch := c.AddChain(&nftables.Chain{
 		Name:     dataplane.ChainForward,
 		Table:    tbl,
@@ -253,6 +261,13 @@ func (m *Module) buildRuleset(queueNum uint16) error {
 		Priority: nftables.ChainPriorityFilter,
 		Policy:   ref(nftables.ChainPolicyAccept),
 	})
+
+	c.AddRule(&nftables.Rule{Table: tbl, Chain: ch, Exprs: []expr.Any{
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseLLHeader, Offset: 6, Len: 6},
+		&expr.Lookup{SourceRegister: 1, SetName: setMAC.Name, SetID: setMAC.ID},
+		&expr.Counter{},
+		&expr.Verdict{Kind: expr.VerdictDrop},
+	}})
 
 	c.AddRule(&nftables.Rule{Table: tbl, Chain: ch, Exprs: append(ctMarkMatch(dataplane.CtMarkAllow),
 		&expr.Verdict{Kind: expr.VerdictAccept})})

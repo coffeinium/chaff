@@ -7,7 +7,9 @@ type Hit struct {
 	Layer     string `json:"layer"`
 	Indicator string `json:"indicator"`
 	SrcIP     string `json:"src_ip,omitempty"`
+	SrcHost   string `json:"src_host,omitempty"`
 	Detail    string `json:"detail,omitempty"`
+	Action    string `json:"action,omitempty"`
 }
 
 func (s *Store) AddHit(h Hit) error {

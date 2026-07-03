@@ -17,12 +17,11 @@ func (s *Store) ReplaceIndicators(sourceID int64, inds []model.Indicator) (int, 
 	now := time.Now().Unix()
 	stmt, err := tx.Prepare(`
 		INSERT INTO indicators
-			(value, kind, action, scope, threat, note, source_id, first_seen, last_seen, expires_at, enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+			(value, kind, action, scope, note, source_id, first_seen, last_seen, expires_at, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 		ON CONFLICT(value, kind, source_id) DO UPDATE SET
 			action     = excluded.action,
 			scope      = excluded.scope,
-			threat     = excluded.threat,
 			note       = excluded.note,
 			last_seen  = excluded.last_seen,
 			expires_at = excluded.expires_at,
@@ -45,9 +44,12 @@ func (s *Store) ReplaceIndicators(sourceID int64, inds []model.Indicator) (int, 
 		if in.Scope == "" {
 			in.Scope = model.ScopeDomain
 		}
+		if in.Kind == model.KindMAC {
+			in.Value = model.NormalizeMAC(in.Value)
+		}
 		if _, err := stmt.Exec(
 			in.Value, string(in.Kind), string(in.Action), string(in.Scope),
-			in.Threat, in.Note, sourceID, now, now, in.ExpiresAt,
+			in.Note, sourceID, now, now, in.ExpiresAt,
 		); err != nil {
 			return n, err
 		}
@@ -87,7 +89,7 @@ func (s *Store) ReplaceIndicators(sourceID int64, inds []model.Indicator) (int, 
 
 func (s *Store) ListByKind(kind model.Kind) ([]model.Indicator, error) {
 	rows, err := s.db.Query(`
-		SELECT id, value, kind, action, scope, threat, note, source_id,
+		SELECT id, value, kind, action, scope, note, source_id,
 		       first_seen, last_seen, expires_at, enabled
 		FROM indicators
 		WHERE kind = ? AND enabled = 1 AND (expires_at = 0 OR expires_at > strftime('%s','now'))
@@ -97,6 +99,50 @@ func (s *Store) ListByKind(kind model.Kind) ([]model.Indicator, error) {
 	}
 	defer rows.Close()
 	return scanIndicators(rows)
+}
+
+func (s *Store) ListAll() ([]model.Indicator, error) {
+	rows, err := s.db.Query(`
+		SELECT id, value, kind, action, scope, note, source_id,
+		       first_seen, last_seen, expires_at, enabled
+		FROM indicators
+		WHERE enabled = 1 AND kind IN ('ip','cidr','domain','url','mac')
+		  AND (expires_at = 0 OR expires_at > strftime('%s','now'))
+		ORDER BY kind, value`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanIndicators(rows)
+}
+
+func (s *Store) ListBySource(sourceID int64, limit int) ([]model.Indicator, int, error) {
+	var total int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(1) FROM indicators WHERE source_id = ?`, sourceID,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.Query(`
+		SELECT id, value, kind, action, scope, note, source_id,
+		       first_seen, last_seen, expires_at, enabled
+		FROM indicators
+		WHERE source_id = ?
+		ORDER BY kind, value LIMIT ?`, sourceID, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	inds, err := scanIndicators(rows)
+	return inds, total, err
+}
+
+func (s *Store) UpdateNote(id int64, note string) (int64, error) {
+	res, err := s.db.Exec(`UPDATE indicators SET note = ? WHERE id = ?`, note, id)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *Store) CountByKind() (map[model.Kind]int, error) {
@@ -119,12 +165,14 @@ func (s *Store) CountByKind() (map[model.Kind]int, error) {
 
 func (s *Store) BuildRuleset() (model.Ruleset, error) {
 	rs := model.Ruleset{Allow: model.AllowSet{Domains: map[string]bool{}}}
+	var blockMAC []string
+	allowMAC := map[string]bool{}
 
 	rows, err := s.db.Query(`
-		SELECT value, kind, action, scope, threat
+		SELECT value, kind, action, scope
 		FROM indicators
 		WHERE enabled = 1
-		  AND kind IN ('ip','cidr','domain','url')
+		  AND kind IN ('ip','cidr','domain','url','mac')
 		  AND (expires_at = 0 OR expires_at > strftime('%s','now'))`)
 	if err != nil {
 		return rs, err
@@ -132,8 +180,8 @@ func (s *Store) BuildRuleset() (model.Ruleset, error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var value, kind, action, scope, threat string
-		if err := rows.Scan(&value, &kind, &action, &scope, &threat); err != nil {
+		var value, kind, action, scope string
+		if err := rows.Scan(&value, &kind, &action, &scope); err != nil {
 			return rs, err
 		}
 		switch model.Kind(kind) {
@@ -149,6 +197,13 @@ func (s *Store) BuildRuleset() (model.Ruleset, error) {
 			} else {
 				rs.IPv6 = append(rs.IPv6, p)
 			}
+		case model.KindMAC:
+			v := model.NormalizeMAC(value)
+			if model.Action(action) == model.ActionAllow {
+				allowMAC[v] = true
+			} else if model.Action(action) == model.ActionBlock {
+				blockMAC = append(blockMAC, v)
+			}
 		case model.KindDomain:
 			if model.Action(action) == model.ActionAllow {
 				rs.Allow.Domains[value] = true
@@ -156,15 +211,20 @@ func (s *Store) BuildRuleset() (model.Ruleset, error) {
 			}
 			rs.Domains = append(rs.Domains, model.DomainRule{
 				Domain: value, Scope: model.Scope(scope),
-				Action: model.Action(action), Threat: threat,
+				Action: model.Action(action),
 			})
 		case model.KindURL:
 			if model.Action(action) == model.ActionAllow {
 				continue
 			}
 			rs.URLs = append(rs.URLs, model.URLRule{
-				URL: value, Action: model.Action(action), Threat: threat,
+				URL: value, Action: model.Action(action),
 			})
+		}
+	}
+	for _, v := range blockMAC {
+		if !allowMAC[v] {
+			rs.MACs = append(rs.MACs, v)
 		}
 	}
 	return rs, rows.Err()
@@ -191,7 +251,7 @@ func scanIndicators(rows interface {
 		var kind, action, scope string
 		var enabled int
 		if err := rows.Scan(
-			&in.ID, &in.Value, &kind, &action, &scope, &in.Threat, &in.Note,
+			&in.ID, &in.Value, &kind, &action, &scope, &in.Note,
 			&in.SourceID, &in.FirstSeen, &in.LastSeen, &in.ExpiresAt, &enabled,
 		); err != nil {
 			return nil, err
