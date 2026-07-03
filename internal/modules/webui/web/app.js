@@ -74,7 +74,16 @@ async function loadVersion() {
     const j = await r.json();
     if (!j.ok) return;
     const d = j.data;
-    if (d.version) $("#ver").textContent = "v" + String(d.version).replace(/^v/, "");
+    if (d.version) {
+      const vs = "v" + String(d.version).replace(/^v/, "");
+      $("#ver").textContent = vs;
+      const hv = $("#hver");
+      hv.textContent = vs;
+      if (d.outdated) {
+        hv.classList.add("offc");
+        hv.title = "доступна " + d.latest;
+      }
+    }
     const u = $("#update");
     u.textContent = "";
     if (d.outdated) {
@@ -160,7 +169,7 @@ async function renderView() {
 function card(k, val, cls) {
   return h("div", { class: "card" },
     h("div", { class: "k", text: k }),
-    h("div", { class: "v " + (cls || ""), text: String(val) }),
+    h("div", { class: "v " + (cls || ""), text: String(val), title: String(val) }),
   );
 }
 
