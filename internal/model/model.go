@@ -47,12 +47,15 @@ type Indicator struct {
 }
 
 type SourceSpec struct {
-	ID        int64          `json:"id"`
-	Name      string         `json:"name"`
-	Adapter   string         `json:"adapter"`
-	URI       string         `json:"uri"`
-	ColumnMap map[string]int `json:"column_map,omitempty"`
-	Enabled   bool           `json:"enabled"`
+	ID         int64          `json:"id"`
+	Name       string         `json:"name"`
+	Adapter    string         `json:"adapter"`
+	URI        string         `json:"uri"`
+	ColumnMap  map[string]int `json:"column_map,omitempty"`
+	Enabled    bool           `json:"enabled"`
+	LastSync   int64          `json:"last_sync,omitempty"`
+	LastStatus string         `json:"last_status,omitempty"`
+	LastCount  int            `json:"last_count,omitempty"`
 }
 
 type Ruleset struct {

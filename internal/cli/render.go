@@ -289,11 +289,23 @@ func renderSources(ss []map[string]any) {
 			str(s["name"]),
 			str(s["adapter"]),
 			onoff(boolean(s["enabled"])),
+			syncCell(s),
 			str(s["uri"]),
 		})
 	}
-	table([]string{"имя", "адаптер", "вкл", "источник"}, out)
+	table([]string{"имя", "адаптер", "вкл", "синк", "источник"}, out)
 	footer(len(ss), "")
+}
+
+func syncCell(s map[string]any) string {
+	if intOf(s["last_sync"]) == 0 {
+		return rDim.Render("ещё не синкался")
+	}
+	line := fmt.Sprintf("%s · %d · %s", str(s["last_status"]), intOf(s["last_count"]), ts(s["last_sync"]))
+	if strings.HasPrefix(str(s["last_status"]), "ok") {
+		return rDim.Render(line)
+	}
+	return rOff.Render(line)
 }
 
 func renderStatus(m map[string]any) {

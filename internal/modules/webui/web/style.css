@@ -73,6 +73,8 @@ code { color: var(--accent); }
   border-top: 1px solid var(--line);
   font-size: 12px;
 }
+.foot a { text-decoration: none; }
+.foot a:hover { color: var(--accent); }
 .update {
   margin-top: 12px;
   padding: 7px 10px;

@@ -235,10 +235,11 @@ function tsFmt(sec) {
 
 async function viewStatus() {
   const v = $("#view");
-  const [d, hits, srcs, ver] = await Promise.all([
+  const [d, hits, srcs, hosts, ver] = await Promise.all([
     api("status"),
     api("hits", { limit: "500" }).catch(() => []),
     api("source.ls").catch(() => []),
+    api("hosts").catch(() => []),
     fetch("/api/version").then((r) => r.json()).then((j) => j.data).catch(() => null),
   ]);
   v.textContent = "";
@@ -251,10 +252,9 @@ async function viewStatus() {
   const brCls = !br.running ? "dim" : br.up ? "on" : "offc";
 
   const hitList = hits || [];
-  const layers = {};
-  for (const x of hitList) layers[x.layer || "?"] = (layers[x.layer || "?"] || 0) + 1;
   const srcList = srcs || [];
   const srcOn = srcList.filter((s) => s.enabled).length;
+  const machines = new Set((hosts || []).map((x) => x.hostname)).size;
 
   const ipb = mods.find((m) => m.name === "ipblock");
   const drops = ipb && ipb.health && ipb.health.metrics ? ipb.health.metrics["дропов"] : undefined;
@@ -267,6 +267,7 @@ async function viewStatus() {
   );
   if (drops !== undefined) cards.append(card("IP-дропов", drops));
   cards.append(card("источников", srcOn + " / " + srcList.length));
+  cards.append(card("машин в сети", machines));
   if (ver && ver.version) {
     cards.append(card("версия", "v" + String(ver.version).replace(/^v/, ""), ver.outdated ? "offc" : "dim"));
   }
@@ -280,11 +281,46 @@ async function viewStatus() {
       " · сессий " + (wm.sessions ?? 0) + " · токенов " + (wm.tokens ?? 0)));
   }
 
-  const lkeys = Object.keys(layers).sort();
-  if (lkeys.length) {
-    v.append(h("h3", { class: "subh", text: "срабатывания по слоям" }));
-    v.append(tableEl(["слой", "кол-во"], lkeys.map((k) =>
-      h("tr", null, h("td", { text: k }), h("td", { text: String(layers[k]) })))));
+  v.append(h("h3", { class: "subh", text: "функции" }));
+  v.append(tableEl(["", "функция", "состояние"], mods.map((m) =>
+    h("tr", null,
+      h("td", null, runState(m)),
+      h("td", { text: m.title || m.name }),
+      h("td", { class: m.health && m.health.ok === false ? "offc" : "dim", text: m.health ? m.health.detail || "" : "" }),
+    ))));
+
+  const groups = new Map();
+  for (const x of hitList) {
+    const key = (x.layer || "") + "|" + (x.indicator || "");
+    let g = groups.get(key);
+    if (!g) {
+      g = { layer: x.layer || "", indicator: x.indicator || "", first: x.ts, last: x.ts, count: 0 };
+      groups.set(key, g);
+    }
+    g.count++;
+    if (x.ts < g.first) g.first = x.ts;
+    if (x.ts > g.last) g.last = x.ts;
+  }
+  const top = [...groups.values()].sort((a, b) => b.last - a.last).slice(0, 5);
+  if (top.length) {
+    v.append(h("h3", { class: "subh", text: "последние срабатывания" }));
+    v.append(tableEl(["диапазон", "слой", "индикатор", "раз"], top.map((g) =>
+      h("tr", null,
+        h("td", { text: rangeFmt(g.first, g.last) }),
+        h("td", null, h("span", { class: "tag", text: g.layer })),
+        h("td", { text: g.indicator }),
+        h("td", { text: "×" + g.count }),
+      ))));
+  }
+
+  if (srcList.length) {
+    v.append(h("h3", { class: "subh", text: "источники" }));
+    v.append(tableEl(["имя", "вкл", "синк"], srcList.map((s) =>
+      h("tr", null,
+        h("td", { text: s.name }),
+        h("td", null, onoff(s.enabled)),
+        h("td", { class: syncCls(s), text: syncFmt(s) }),
+      ))));
   }
 
   const ikeys = Object.keys(inds).sort();
@@ -293,6 +329,16 @@ async function viewStatus() {
     v.append(tableEl(["вид", "кол-во"], ikeys.map((k) =>
       h("tr", null, h("td", { text: k || "-" }), h("td", { text: String(inds[k]) })))));
   }
+}
+
+function syncFmt(s) {
+  if (!s.last_sync) return "ещё не синкался";
+  return (s.last_status || "?") + " · " + (s.last_count || 0) + " · " + tsFmt(s.last_sync);
+}
+
+function syncCls(s) {
+  if (!s.last_sync || /^ok/.test(s.last_status || "")) return "dim";
+  return "offc";
 }
 
 function rangeFmt(first, last) {
@@ -495,6 +541,7 @@ async function viewSources() {
       h("td", { text: s.name }),
       h("td", { text: s.adapter }),
       h("td", null, onoff(s.enabled)),
+      h("td", { class: syncCls(s), text: syncFmt(s) }),
       h("td", null, s.uri
         ? h("button", { class: "linkish", text: s.uri, title: "показать содержимое", onclick: () => toggleSource(tr, s) })
         : ""),
@@ -511,7 +558,7 @@ async function viewSources() {
     );
     return tr;
   });
-  v.append(tableEl(["имя", "адаптер", "вкл", "файл / ссылка", ""], rows));
+  v.append(tableEl(["имя", "адаптер", "вкл", "синк", "файл / ссылка", ""], rows));
 }
 
 function sourceDelBtn(s) {
@@ -622,13 +669,15 @@ function filterRows() {
   }
 }
 
+const LIVE_VIEWS = new Set(["status", "hits", "flows"]);
+
 let autoTimer;
 function startAuto() {
   stopAuto();
   const sec = parseInt($("#auto").value, 10) || 0;
   if (sec <= 0) return;
   autoTimer = setInterval(() => {
-    if (document.hidden) return;
+    if (document.hidden || !LIVE_VIEWS.has(current)) return;
     const a = document.activeElement;
     if (a && (a.tagName === "INPUT" || a.tagName === "SELECT")) return;
     renderView();

@@ -23,7 +23,9 @@ func (s *Store) AddSource(spec model.SourceSpec) (int64, error) {
 }
 
 func (s *Store) ListSources() ([]model.SourceSpec, error) {
-	rows, err := s.db.Query(`SELECT id, name, adapter, uri, column_map, enabled FROM sources ORDER BY name`)
+	rows, err := s.db.Query(`
+		SELECT id, name, adapter, uri, column_map, enabled, last_sync, last_status, last_count
+		FROM sources ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +34,9 @@ func (s *Store) ListSources() ([]model.SourceSpec, error) {
 }
 
 func (s *Store) EnabledSources() ([]model.SourceSpec, error) {
-	rows, err := s.db.Query(`SELECT id, name, adapter, uri, column_map, enabled FROM sources WHERE enabled = 1 ORDER BY name`)
+	rows, err := s.db.Query(`
+		SELECT id, name, adapter, uri, column_map, enabled, last_sync, last_status, last_count
+		FROM sources WHERE enabled = 1 ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +101,10 @@ func scanSources(rows interface {
 		var spec model.SourceSpec
 		var cm string
 		var enabled int
-		if err := rows.Scan(&spec.ID, &spec.Name, &spec.Adapter, &spec.URI, &cm, &enabled); err != nil {
+		if err := rows.Scan(
+			&spec.ID, &spec.Name, &spec.Adapter, &spec.URI, &cm, &enabled,
+			&spec.LastSync, &spec.LastStatus, &spec.LastCount,
+		); err != nil {
 			return nil, err
 		}
 		spec.Enabled = enabled != 0
