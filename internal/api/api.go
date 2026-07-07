@@ -291,7 +291,146 @@ func Handlers(k *kernel.Kernel) map[string]ipc.Handler {
 		return ipc.OK(bc.Status())
 	}
 
+	registerGroupHandlers(k, h)
+
 	return h
+}
+
+// registerGroupHandlers — ОПАСНЫЙ ЭКСПЕРИМЕНТ: групповые политики.
+func registerGroupHandlers(k *kernel.Kernel, h map[string]ipc.Handler) {
+	st := k.Store
+	gate := func() error {
+		if !running(k)["grouppolicy"] {
+			return fmt.Errorf("модуль grouppolicy выключен (chaff module enable grouppolicy)")
+		}
+		return nil
+	}
+	reload := func(reason string) {
+		k.Bus.Publish(bus.Event{Topic: bus.TopicReload, Data: reason})
+	}
+
+	h["group.ls"] = func(_ ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		groups, err := st.ListGroups()
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(groups)
+	}
+	h["group.scan"] = func(_ ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		entries, err := st.ListHostnames()
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		claimed, _ := st.MemberMachineIndex()
+		out := make([]map[string]any, 0, len(entries))
+		for _, e := range entries {
+			grp := ""
+			if e.Kind == "mac" {
+				grp = claimed[model.NormalizeMAC(e.Key)]
+			}
+			out = append(out, map[string]any{
+				"hostname": e.Hostname, "kind": e.Kind, "key": e.Key,
+				"via": e.Via, "seen_at": e.SeenAt, "group": grp,
+			})
+		}
+		return ipc.OK(out)
+	}
+	h["group.add"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.CreateGroup(req.Arg("name"), req.Arg("action"), req.Arg("note"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(fmt.Sprintf("группа %q создана (действие: %s, выключена)", g.Name, g.Action))
+	}
+	h["group.rm"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		name, err := st.DeleteGroup(req.Arg("ref"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		reload("group.rm")
+		return ipc.OK(fmt.Sprintf("группа %q удалена", name))
+	}
+	h["group.enable"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.SetGroupEnabled(req.Arg("ref"), true)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		reload("group.enable")
+		return ipc.OK(fmt.Sprintf("группа %q включена, политика применяется", g.Name))
+	}
+	h["group.disable"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.SetGroupEnabled(req.Arg("ref"), false)
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		reload("group.disable")
+		return ipc.OK(fmt.Sprintf("группа %q выключена", g.Name))
+	}
+	h["group.action"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.SetGroupAction(req.Arg("ref"), req.Arg("action"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		reload("group.action")
+		return ipc.OK(fmt.Sprintf("действие группы %q: %s", g.Name, g.Action))
+	}
+	h["group.note"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.SetGroupNote(req.Arg("ref"), req.Arg("note"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		return ipc.OK(fmt.Sprintf("заметка группы %q обновлена", g.Name))
+	}
+	h["group.member.add"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, okMsg, err := st.AddGroupMember(req.Arg("ref"), req.Arg("value"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		if g.Enabled {
+			reload("group.member.add")
+		}
+		return ipc.OK(okMsg)
+	}
+	h["group.member.rm"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.RemoveGroupMember(req.Arg("ref"), req.Arg("value"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		if g.Enabled {
+			reload("group.member.rm")
+		}
+		return ipc.OK(fmt.Sprintf("участник удалён из группы %q", g.Name))
+	}
 }
 
 func markVerdicts(k *kernel.Kernel, flows []analyzer.Flow) {

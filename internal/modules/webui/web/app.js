@@ -122,7 +122,7 @@ $("#logout").addEventListener("click", async () => {
   showLogin();
 });
 
-const VIEWS = [
+const BASE_VIEWS = [
   ["status", "Статус"],
   ["hits", "Срабатывания"],
   ["flows", "Соединения"],
@@ -134,11 +134,32 @@ const KINDS = ["все", "ip", "cidr", "domain", "url", "mac"];
 let current = "status";
 let indKind = "все";
 let indQuery = "";
+let groupsOn = false;
+
+function views() {
+  const v = BASE_VIEWS.slice();
+  if (groupsOn) v.push(["groups", "Группы"]);
+  return v;
+}
+
+function setGroupsOn(mods) {
+  const on = !!(mods || []).find((m) => m.name === "grouppolicy" && m.enabled);
+  if (on === groupsOn) return;
+  groupsOn = on;
+  if (!on && current === "groups") current = "status";
+  buildTabs();
+}
+
+async function refreshGroupsTab() {
+  try {
+    setGroupsOn(await api("module.ls"));
+  } catch (e) {}
+}
 
 function buildTabs() {
   const nav = $("#tabs");
   nav.textContent = "";
-  for (const [id, label] of VIEWS) {
+  for (const [id, label] of views()) {
     nav.append(
       h("button", {
         class: id === current ? "active" : "",
@@ -161,6 +182,7 @@ async function renderView() {
     else if (current === "modules") await viewModules();
     else if (current === "sources") await viewSources();
     else if (current === "indicators") await viewIndicators();
+    else if (current === "groups") await viewGroups();
   } catch (e) {
     if (e.message !== "нужен вход") msg(e.message, "bad");
   }
@@ -472,6 +494,7 @@ function macCell(f) {
 
 async function viewModules() {
   const mods = (await api("module.ls")) || [];
+  setGroupsOn(mods);
   const v = $("#view");
   v.textContent = "";
   const rows = mods.map((m) =>
@@ -678,6 +701,138 @@ function filterRows() {
   }
 }
 
+async function viewGroups() {
+  const v = $("#view");
+  v.textContent = "";
+
+  v.append(h("div", { class: "warnbox" },
+    h("b", null, "Опасный экспериментальный функционал. "),
+    "Группы блокируют/разблокируют машины по MAC или имени хоста. ",
+    "Приоритет: ручные (фундаментальные) правила → групповые → списки-фиды. ",
+    "Ручные блокировки всегда перевешивают, конфликтующее с ними правило создать нельзя. ",
+    "Одна машина может состоять только в одной группе."));
+
+  let groups, cands;
+  try {
+    [groups, cands] = await Promise.all([api("group.ls"), api("group.scan").catch(() => [])]);
+  } catch (e) {
+    if (e.message === "нужен вход") return;
+    v.append(h("p", { class: "dim", text: e.message }));
+    return;
+  }
+  groups = groups || [];
+  cands = cands || [];
+
+  const dl = h("datalist", { id: "grp-cands" });
+  const seen = new Set();
+  for (const c of cands) {
+    for (const val of [c.key, c.hostname]) {
+      if (val && !seen.has(val)) { seen.add(val); dl.append(h("option", { value: val })); }
+    }
+  }
+  v.append(dl);
+
+  const nameI = h("input", { placeholder: "имя группы" });
+  const actI = h("select", null,
+    h("option", { value: "block", text: "block" }),
+    h("option", { value: "allow", text: "allow" }));
+  const noteI = h("input", { placeholder: "заметка (необязательно)" });
+  v.append(h("div", { class: "bar" }, nameI, actI, noteI,
+    h("button", {
+      text: "создать группу",
+      onclick: () => run(async () => {
+        const r = await api("group.add", { name: nameI.value.trim(), action: actI.value, note: noteI.value.trim() });
+        nameI.value = ""; noteI.value = "";
+        return r;
+      }),
+    })));
+
+  if (!groups.length) v.append(h("p", { class: "dim", text: "групп нет" }));
+  for (const g of groups) v.append(groupCard(g));
+
+  if (cands.length) {
+    v.append(h("h3", { class: "subh", text: "машины в сети" }));
+    v.append(tableEl(["имя", "вид", "адрес", "группа"], cands.map((c) =>
+      h("tr", null,
+        h("td", { text: c.hostname || "" }),
+        h("td", null, h("span", { class: "tag", text: c.kind || "" })),
+        h("td", { text: c.key || "" }),
+        c.group ? h("td", { text: c.group }) : h("td", { class: "dim", text: "—" }),
+      ))));
+  }
+}
+
+function groupCard(g) {
+  const box = h("div", { class: "grp" });
+  box.append(h("div", { class: "grp-head" },
+    h("b", { text: g.name }),
+    actionTag(g.action),
+    g.enabled ? h("span", { class: "on", text: "включена" }) : h("span", { class: "offc", text: "выключена" }),
+    g.note ? h("span", { class: "dim", text: "· " + g.note }) : null,
+    h("span", { class: "spacer" }),
+    h("button", {
+      class: "sm", text: g.action === "block" ? "→ allow" : "→ block",
+      title: "сменить действие группы",
+      onclick: () => run(() => api("group.action", { ref: String(g.id), action: g.action === "block" ? "allow" : "block" })),
+    }),
+    h("button", {
+      class: "sm " + (g.enabled ? "mut" : ""), text: g.enabled ? "выключить" : "включить",
+      onclick: () => run(() => api(g.enabled ? "group.disable" : "group.enable", { ref: String(g.id) })),
+    }),
+    groupDelBtn(g),
+  ));
+
+  const body = h("div", { class: "grp-body" });
+  const members = g.members || [];
+  if (members.length) {
+    body.append(tableEl(["участник", "вид", "имя", "mac", "готов", ""], members.map((m) =>
+      h("tr", null,
+        h("td", { text: m.value }),
+        h("td", null, h("span", { class: "tag", text: m.kind })),
+        h("td", { text: m.hostname || "" }),
+        h("td", { text: (m.macs || []).join(", ") }),
+        h("td", null, m.resolved
+          ? h("span", { class: "on", text: "да" })
+          : h("span", { class: "offc", text: "ждёт" })),
+        h("td", null, h("button", {
+          class: "sm mut", text: "убрать",
+          onclick: () => run(() => api("group.member.rm", { ref: String(g.id), value: m.value })),
+        })),
+      ))));
+  } else {
+    body.append(h("p", { class: "dim", text: "нет участников" }));
+  }
+
+  const memI = h("input", { placeholder: "MAC или имя хоста", list: "grp-cands" });
+  const add = () => run(async () => {
+    const r = await api("group.member.add", { ref: String(g.id), value: memI.value.trim() });
+    memI.value = "";
+    return r;
+  });
+  memI.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+  body.append(h("div", { class: "bar" }, memI,
+    h("button", { class: "sm", text: "добавить участника", onclick: add })));
+
+  box.append(body);
+  return box;
+}
+
+function groupDelBtn(g) {
+  const b = h("button", { class: "sm mut", text: "удалить" });
+  b.addEventListener("click", () => {
+    if (b.dataset.arm) { run(() => api("group.rm", { ref: String(g.id) })); return; }
+    b.dataset.arm = "1";
+    b.textContent = "точно?";
+    b.classList.add("danger");
+    setTimeout(() => {
+      b.dataset.arm = "";
+      b.textContent = "удалить";
+      b.classList.remove("danger");
+    }, 3000);
+  });
+  return b;
+}
+
 const LIVE_VIEWS = new Set(["status", "hits", "flows"]);
 
 let autoTimer;
@@ -758,6 +913,7 @@ function start() {
   buildTabs();
   renderView();
   startAuto();
+  refreshGroupsTab();
 }
 
 (async function () {

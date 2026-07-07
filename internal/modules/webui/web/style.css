@@ -337,6 +337,30 @@ tbody tr.expand td { background: var(--panel); padding: 8px 12px; }
 tbody tr.expand:hover td { background: var(--panel); }
 tbody tr.expand table { margin-top: 4px; }
 
+.warnbox {
+  border: 1px solid #55322d;
+  border-left: 3px solid var(--off);
+  background: #170e0d;
+  color: #d1938b;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+.warnbox b { color: #e8a99f; }
+
+.grp { border: 1px solid var(--line); margin-bottom: 12px; background: var(--panel); }
+.grp-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel2);
+}
+.grp-body { padding: 10px 12px; }
+.grp-body .bar { margin-top: 12px; margin-bottom: 0; }
+
 .macw { display: inline-flex; gap: 6px; align-items: center; }
 .macw button { visibility: hidden; }
 tr:hover .macw button { visibility: visible; }

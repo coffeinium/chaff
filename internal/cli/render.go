@@ -49,6 +49,8 @@ func render(group string, data any, jsonOut bool) {
 		renderTest(asMap(data))
 	case "web":
 		renderWeb(data)
+	case "group":
+		renderGroup(rows(data))
 	default:
 		if data == nil {
 			return
@@ -410,6 +412,74 @@ func renderTokens(toks []map[string]any) {
 	}
 	table([]string{"id", "имя", "создан", "истекает", "исп."}, out)
 	footer(len(toks), "")
+}
+
+func dangerBanner() {
+	fmt.Println(rOff.Render("ОПАСНЫЙ ЭКСПЕРИМЕНТАЛЬНЫЙ ФУНКЦИОНАЛ") +
+		rDim.Render(" · ручные блокировки в приоритете, машина — только в одной группе"))
+}
+
+func renderGroup(data []map[string]any) {
+	// scan-кандидаты: строки без имени группы, но с hostname.
+	if len(data) > 0 && data[0]["name"] == nil {
+		section("кандидаты из сети")
+		dangerBanner()
+		var out [][]string
+		for _, e := range data {
+			grp := str(e["group"])
+			if grp == "" {
+				grp = rDim.Render("—")
+			}
+			out = append(out, []string{
+				str(e["hostname"]), str(e["kind"]), str(e["key"]), grp,
+			})
+		}
+		table([]string{"имя", "вид", "адрес", "группа"}, out)
+		footer(len(data), "")
+		return
+	}
+
+	section("группы")
+	dangerBanner()
+	if len(data) == 0 {
+		empty("пусто (chaff group add ИМЯ)")
+		return
+	}
+	for _, g := range data {
+		state := rOff.Render("выкл")
+		if boolean(g["enabled"]) {
+			state = rOK.Render("вкл")
+		}
+		head := fmt.Sprintf("%s  %s  %s", rHdr.Render(str(g["name"])), action(str(g["action"])), state)
+		if note := str(g["note"]); note != "" {
+			head += rDim.Render("  · " + note)
+		}
+		fmt.Println("\n" + head)
+		members := rows(g["members"])
+		if len(members) == 0 {
+			empty("нет участников (chaff group add-member " + str(g["name"]) + " MAC|ХОСТ)")
+			continue
+		}
+		var out [][]string
+		for _, m := range members {
+			macs := ""
+			if arr, ok := m["macs"].([]any); ok {
+				parts := make([]string, 0, len(arr))
+				for _, x := range arr {
+					parts = append(parts, str(x))
+				}
+				macs = strings.Join(parts, ", ")
+			}
+			resolved := rOK.Render("да")
+			if !boolean(m["resolved"]) {
+				resolved = rWarn.Render("ждёт")
+			}
+			out = append(out, []string{
+				str(m["value"]), str(m["kind"]), str(m["hostname"]), macs, resolved,
+			})
+		}
+		table([]string{"участник", "вид", "имя", "mac", "готов"}, out)
+	}
 }
 
 func bytesH(n int) string {

@@ -8,6 +8,13 @@ STATE="/var/lib/chaff"
 UNIT="/etc/systemd/system/chaff.service"
 MODLOAD="/etc/modules-load.d/chaff.conf"
 VER="${CHAFF_VERSION:-latest}"
+API="https://api.github.com/repos/$REPO"
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+	c_red=$'\033[31m'; c_grn=$'\033[32m'; c_dim=$'\033[2m'; c_bold=$'\033[1m'; c_rst=$'\033[0m'
+else
+	c_red=; c_grn=; c_dim=; c_bold=; c_rst=
+fi
 
 die() { echo "ошибка: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null || die "нужен $1"; }
@@ -25,10 +32,117 @@ arch() {
 
 resolve_version() {
 	if [ "$VER" = latest ]; then
-		VER=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -oP '"tag_name"\s*:\s*"\K[^"]+') \
+		VER=$(curl -fsSL "$API/releases/latest" | grep -oP '"tag_name"\s*:\s*"\K[^"]+') \
 			|| die "не узнать последнюю версию"
 	fi
 	[ -n "$VER" ] || die "пустая версия"
+}
+
+# list_releases печатает строки "ТЕГ<TAB>КАНАЛ" (канал: stable|experimental),
+# свежие сверху. Экспериментальными считаются prerelease-релизы.
+list_releases() {
+	local json
+	json=$(curl -fsSL "$API/releases?per_page=40") || return 1
+	if command -v jq >/dev/null 2>&1; then
+		printf '%s' "$json" | jq -r '
+			.[] | select(.draft | not)
+			| [.tag_name, (if .prerelease then "experimental" else "stable" end)] | @tsv'
+		return 0
+	fi
+	# без jq: вытаскиваем tag_name и prerelease по порядку и склеиваем парами
+	printf '%s' "$json" \
+		| grep -oP '"(tag_name|prerelease)":\s*"?\K(true|false|[^",}]+)' \
+		| paste - - \
+		| awk -F'\t' 'NF==2 {print $1"\t"($2=="true"?"experimental":"stable")}'
+}
+
+channel_label() {
+	case "$1" in
+		experimental) printf '%s' "${c_red}${c_bold}experimental${c_rst}" ;;
+		stable)       printf '%s' "${c_grn}stable${c_rst}" ;;
+		*)            printf '%s' "$1" ;;
+	esac
+}
+
+# pick_version выбирает версию: явно заданная (CHAFF_VERSION) — как есть; при живом
+# терминале показывает меню релизов с тегом канала; иначе — последняя стабильная.
+pick_version() {
+	if [ -n "${CHAFF_VERSION:-}" ] && [ "$CHAFF_VERSION" != latest ]; then
+		VER="$CHAFF_VERSION"
+		return
+	fi
+	if [ "${CHAFF_VERSION:-}" = latest ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then
+		resolve_version
+		return
+	fi
+
+	need curl
+	local rows=()
+	mapfile -t rows < <(list_releases) || true
+	if [ "${#rows[@]}" -eq 0 ]; then
+		echo "список релизов недоступен, беру latest" >&2
+		resolve_version
+		return
+	fi
+
+	# показываем только самые свежие, старые прячем
+	local total=${#rows[@]} max=${CHAFF_MENU_MAX:-8} hidden=0
+	if [ "$total" -gt "$max" ]; then
+		hidden=$((total - max))
+		rows=("${rows[@]:0:max}")
+	fi
+
+	echo "доступные версии chaff (новые сверху):"
+	local i=1 r tag ch extra latest_marked=""
+	for r in "${rows[@]}"; do
+		tag=${r%%$'\t'*}
+		ch=${r#*$'\t'}
+		extra=""
+		if [ "$ch" = stable ] && [ -z "$latest_marked" ]; then
+			extra="  ${c_dim}(latest)${c_rst}"
+			latest_marked=1
+		fi
+		printf '  %2d) %-16s %s%s\n' "$i" "$tag" "$(channel_label "$ch")" "$extra"
+		i=$((i + 1))
+	done
+	if [ "$hidden" -gt 0 ]; then
+		printf '  %s\n' "${c_dim}…ещё $hidden старее скрыто (CHAFF_VERSION=ТЕГ чтобы поставить любую)${c_rst}"
+	fi
+
+	local choice=""
+	printf 'выбери версию [1-%d, Enter = 1]: ' "${#rows[@]}"
+	read -r choice < /dev/tty || choice=""
+	[ -z "$choice" ] && choice=1
+	case "$choice" in
+		*[!0-9]*) die "нужен номер из списка" ;;
+	esac
+	[ "$choice" -ge 1 ] && [ "$choice" -le "${#rows[@]}" ] || die "номер вне диапазона 1-${#rows[@]}"
+
+	local sel=${rows[choice - 1]}
+	VER=${sel%%$'\t'*}
+	ch=${sel#*$'\t'}
+	if [ "$ch" = experimental ]; then
+		echo "${c_red}${c_bold}внимание:${c_rst} ${c_red}$VER — экспериментальный релиз (prerelease)${c_rst}"
+	fi
+}
+
+show_versions() {
+	need curl
+	local rows=() r tag ch extra latest_marked=""
+	mapfile -t rows < <(list_releases) || true
+	[ "${#rows[@]}" -gt 0 ] || die "список релизов недоступен"
+	echo "релизы chaff ($REPO):"
+	for r in "${rows[@]}"; do
+		tag=${r%%$'\t'*}
+		ch=${r#*$'\t'}
+		extra=""
+		if [ "$ch" = stable ] && [ -z "$latest_marked" ]; then
+			extra="  ${c_dim}(latest)${c_rst}"
+			latest_marked=1
+		fi
+		printf '  %-16s %s%s\n' "$tag" "$(channel_label "$ch")" "$extra"
+	done
+	echo "поставить конкретную: CHAFF_VERSION=ТЕГ ... | sudo bash"
 }
 
 fetch_bin() {
@@ -47,7 +161,7 @@ installed_version() {
 install_chaff() {
 	need curl
 	need systemctl
-	resolve_version
+	pick_version
 	echo "== chaff $VER ($(arch)) =="
 
 	local TMP
@@ -121,7 +235,7 @@ DONE
 update_chaff() {
 	need curl
 	[ -x "$BIN" ] || die "chaff не установлен, сначала install"
-	resolve_version
+	pick_version
 	local cur new
 	cur=$(installed_version)
 	new=${VER#v}
@@ -189,5 +303,6 @@ case "${1:-install}" in
 	install) install_chaff ;;
 	update | upgrade) update_chaff ;;
 	uninstall | remove) uninstall_chaff ;;
-	*) die "использование: install.sh [install|update|uninstall]" ;;
+	versions | list) show_versions ;;
+	*) die "использование: install.sh [install|update|uninstall|versions]" ;;
 esac

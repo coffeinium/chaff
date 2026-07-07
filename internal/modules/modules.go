@@ -9,6 +9,7 @@ import (
 	_ "github.com/coffeinium/chaff/internal/modules/feeds/hosts"
 	_ "github.com/coffeinium/chaff/internal/modules/feeds/text"
 	_ "github.com/coffeinium/chaff/internal/modules/feedsync"
+	_ "github.com/coffeinium/chaff/internal/modules/grouppolicy"
 	_ "github.com/coffeinium/chaff/internal/modules/ipblock"
 	_ "github.com/coffeinium/chaff/internal/modules/macblock"
 	_ "github.com/coffeinium/chaff/internal/modules/namesnoop"

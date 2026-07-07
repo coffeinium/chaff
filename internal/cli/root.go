@@ -48,6 +48,14 @@ const usageText = `chaff, модульный IOC-файрволл (в разры
   chaff status                         код возврата: 0 если мост поднят, иначе 1
   chaff hits [N]                       последние срабатывания блокировок
 
+группы (ОПАСНО, ЭКСПЕРИМЕНТ; chaff module enable grouppolicy):
+  chaff group ls
+  chaff group add ИМЯ [--action block|allow] [--note ПРИЧИНА]
+  chaff group rm ИМЯ | enable ИМЯ | disable ИМЯ
+  chaff group action ИМЯ block|allow
+  chaff group add-member ИМЯ MAC|ХОСТ | rm-member ИМЯ MAC|ХОСТ
+  chaff group scan                     кандидаты из сети (имя|mac)
+
   --json к любой команде: вывод в JSON (для скриптов)
 `
 
