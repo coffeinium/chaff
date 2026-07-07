@@ -10,6 +10,10 @@ MODLOAD="/etc/modules-load.d/chaff.conf"
 VER="${CHAFF_VERSION:-latest}"
 API="https://api.github.com/repos/$REPO"
 
+# Неудачные образцы помечаются суффиксом тега "-failed" (например v0.4.0-failed):
+# показываются в списках, но установка запрещена.
+is_failed() { case "$1" in *-failed) return 0 ;; esac; return 1; }
+
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
 	c_red=$'\033[31m'; c_grn=$'\033[32m'; c_dim=$'\033[2m'; c_bold=$'\033[1m'; c_rst=$'\033[0m'
 else
@@ -38,27 +42,30 @@ resolve_version() {
 	[ -n "$VER" ] || die "пустая версия"
 }
 
-# list_releases печатает строки "ТЕГ<TAB>КАНАЛ" (канал: stable|experimental),
-# свежие сверху. Экспериментальными считаются prerelease-релизы.
+# list_releases печатает строки "ТЕГ<TAB>КАНАЛ" (канал: stable|experimental|failed),
+# свежие сверху. Экспериментальными считаются prerelease-релизы, неудачными —
+# теги с суффиксом -failed.
 list_releases() {
 	local json
 	json=$(curl -fsSL "$API/releases?per_page=40") || return 1
 	if command -v jq >/dev/null 2>&1; then
 		printf '%s' "$json" | jq -r '
 			.[] | select(.draft | not)
-			| [.tag_name, (if .prerelease then "experimental" else "stable" end)] | @tsv'
+			| [.tag_name, (if (.tag_name | endswith("-failed")) then "failed"
+				elif .prerelease then "experimental" else "stable" end)] | @tsv'
 		return 0
 	fi
 	# без jq: вытаскиваем tag_name и prerelease по порядку и склеиваем парами
 	printf '%s' "$json" \
 		| grep -oP '"(tag_name|prerelease)":\s*"?\K(true|false|[^",}]+)' \
 		| paste - - \
-		| awk -F'\t' 'NF==2 {print $1"\t"($2=="true"?"experimental":"stable")}'
+		| awk -F'\t' 'NF==2 {print $1"\t"($1 ~ /-failed$/ ? "failed" : ($2=="true"?"experimental":"stable"))}'
 }
 
 channel_label() {
 	case "$1" in
 		experimental) printf '%s' "${c_red}${c_bold}experimental${c_rst}" ;;
+		failed)       printf '%s' "${c_red}${c_bold}failed${c_rst}${c_dim} · неудачный образец, не ставится${c_rst}" ;;
 		stable)       printf '%s' "${c_grn}stable${c_rst}" ;;
 		*)            printf '%s' "$1" ;;
 	esac
@@ -121,6 +128,9 @@ pick_version() {
 	local sel=${rows[choice - 1]}
 	VER=${sel%%$'\t'*}
 	ch=${sel#*$'\t'}
+	if [ "$ch" = failed ]; then
+		die "$VER — неудачный образец (failed), установка запрещена"
+	fi
 	if [ "$ch" = experimental ]; then
 		echo "${c_red}${c_bold}внимание:${c_rst} ${c_red}$VER — экспериментальный релиз (prerelease)${c_rst}"
 	fi
@@ -147,6 +157,7 @@ show_versions() {
 
 fetch_bin() {
 	local a url
+	is_failed "$VER" && die "$VER — неудачный образец (failed), установка запрещена"
 	a=$(arch)
 	url="https://github.com/$REPO/releases/download/$VER/chaff-linux-$a"
 	echo "качаю $url"
