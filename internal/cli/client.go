@@ -149,7 +149,7 @@ func buildRequest(argv []string) (ipc.Request, error) {
 }
 
 func buildGroupRequest(rest []string) (ipc.Request, error) {
-	usage := "использование: chaff group ls|scan|add|rm|enable|disable|action|add-member|rm-member [...]"
+	usage := "использование: chaff group ls|scan|add|rm|enable|disable|add-member|rm-member|block|allow|rm-rule [...]"
 	if len(rest) < 1 {
 		return ipc.Request{}, fmt.Errorf("%s", usage)
 	}
@@ -162,7 +162,7 @@ func buildGroupRequest(rest []string) (ipc.Request, error) {
 		return ipc.Request{Cmd: "group.scan"}, nil
 	case "add":
 		if len(pos) < 1 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff group add ИМЯ [--action block|allow] [--note ПРИЧИНА]")
+			return ipc.Request{}, fmt.Errorf("использование: chaff group add ИМЯ [--note ПРИЧИНА]")
 		}
 		flags["name"] = pos[0]
 		return ipc.Request{Cmd: "group.add", Args: flags}, nil
@@ -171,11 +171,17 @@ func buildGroupRequest(rest []string) (ipc.Request, error) {
 			return ipc.Request{}, fmt.Errorf("использование: chaff group %s ИМЯ", sub)
 		}
 		return ipc.Request{Cmd: "group." + sub, Args: map[string]string{"ref": pos[0]}}, nil
-	case "action":
+	case "block", "allow":
 		if len(pos) < 2 {
-			return ipc.Request{}, fmt.Errorf("использование: chaff group action ИМЯ block|allow")
+			return ipc.Request{}, fmt.Errorf("использование: chaff group %s ИМЯ VALUE [--note ПРИЧИНА]", sub)
 		}
-		return ipc.Request{Cmd: "group.action", Args: map[string]string{"ref": pos[0], "action": pos[1]}}, nil
+		flags["ref"], flags["value"], flags["action"] = pos[0], pos[1], sub
+		return ipc.Request{Cmd: "group.rule.add", Args: flags}, nil
+	case "rm-rule":
+		if len(pos) < 2 {
+			return ipc.Request{}, fmt.Errorf("использование: chaff group rm-rule ИМЯ VALUE")
+		}
+		return ipc.Request{Cmd: "group.rule.rm", Args: map[string]string{"ref": pos[0], "value": pos[1]}}, nil
 	case "note":
 		if len(pos) < 1 {
 			return ipc.Request{}, fmt.Errorf("использование: chaff group note ИМЯ [--note ПРИЧИНА | ТЕКСТ]")

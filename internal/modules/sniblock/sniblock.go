@@ -2,6 +2,7 @@ package sniblock
 
 import (
 	"context"
+	"net"
 	"strings"
 	"sync"
 
@@ -38,9 +39,18 @@ type Module struct {
 	block   map[string]bool
 	monitor map[string]bool
 	allow   map[string]bool
+	groups  []groupRules
 	urls    int
 	hits    int
 	lastErr error
+}
+
+// groupRules — доменные правила одной группы, действуют только на её MAC.
+type groupRules struct {
+	name  string
+	macs  map[string]bool
+	block map[string]bool
+	allow map[string]bool
 }
 
 func (m *Module) Name() string    { return "sniblock" }
@@ -112,8 +122,26 @@ func (m *Module) Enforce(snap model.Ruleset) error {
 	for d := range snap.Allow.Domains {
 		allow[dpi.NormalizeHost(d)] = true
 	}
+	var groups []groupRules
+	for _, gp := range snap.Groups {
+		g := groupRules{name: gp.Name, macs: map[string]bool{}, block: map[string]bool{}, allow: map[string]bool{}}
+		for _, mc := range gp.MACs {
+			g.macs[mc] = true
+		}
+		for _, d := range gp.Domains {
+			if d.Action == model.ActionBlock {
+				g.block[dpi.NormalizeHost(d.Domain)] = true
+			}
+		}
+		for d := range gp.Allow.Domains {
+			g.allow[dpi.NormalizeHost(d)] = true
+		}
+		if len(g.macs) > 0 && (len(g.block) > 0 || len(g.allow) > 0) {
+			groups = append(groups, g)
+		}
+	}
 	m.mu.Lock()
-	m.block, m.monitor, m.allow, m.urls = block, monitor, allow, len(snap.URLs)
+	m.block, m.monitor, m.allow, m.groups, m.urls = block, monitor, allow, groups, len(snap.URLs)
 	m.mu.Unlock()
 	return nil
 }
@@ -124,9 +152,13 @@ func (m *Module) Health() kernel.Health {
 	if m.lastErr != nil {
 		return kernel.Health{OK: false, Detail: "ошибка: " + m.lastErr.Error()}
 	}
-	return kernel.Health{OK: true, Detail: "включена", Metrics: map[string]any{
+	met := map[string]any{
 		"запрещено": len(m.block), "наблюдение": len(m.monitor), "исключения": len(m.allow), "срабатываний": m.hits,
-	}}
+	}
+	if len(m.groups) > 0 {
+		met["групп"] = len(m.groups)
+	}
+	return kernel.Health{OK: true, Detail: "включена", Metrics: met}
 }
 
 func (m *Module) hook(a nfqueue.Attribute) int {
@@ -149,7 +181,7 @@ func (m *Module) hook(a nfqueue.Attribute) int {
 		m.allowMark(id)
 		return 0
 	}
-	switch m.decide(host) {
+	switch m.decide(host, srcMAC(a)) {
 	case decBlock:
 		m.logHit(layer, host, p.SrcAddr.String(), "block")
 		m.denyMark(id)
@@ -160,6 +192,14 @@ func (m *Module) hook(a nfqueue.Attribute) int {
 		m.allowMark(id)
 	}
 	return 0
+}
+
+// srcMAC достаёт MAC источника из метаданных NFQUEUE (для групповых правил).
+func srcMAC(a nfqueue.Attribute) string {
+	if a.HwAddr != nil && len(*a.HwAddr) >= 6 {
+		return net.HardwareAddr((*a.HwAddr)[:6]).String()
+	}
+	return ""
 }
 
 func (m *Module) extractHost(p dpi.Packet) (host, layer string) {
@@ -176,8 +216,8 @@ func (m *Module) extractHost(p dpi.Packet) (host, layer string) {
 	return "", ""
 }
 
-func (m *Module) Verdict(host string) string {
-	switch m.decide(dpi.NormalizeHost(host)) {
+func (m *Module) Verdict(host, mac string) string {
+	switch m.decide(dpi.NormalizeHost(host), model.NormalizeMAC(mac)) {
 	case decBlock:
 		return "block"
 	case decMonitor:
@@ -188,7 +228,9 @@ func (m *Module) Verdict(host string) string {
 	return ""
 }
 
-func (m *Module) decide(host string) decision {
+// decide: глобальные правила всегда приоритетнее групповых, поэтому сначала
+// глобальный вердикт, и только при его отсутствии — правила группы машины.
+func (m *Module) decide(host, mac string) decision {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if inDomainSet(host, m.allow) {
@@ -199,6 +241,21 @@ func (m *Module) decide(host string) decision {
 	}
 	if inDomainSet(host, m.monitor) {
 		return decMonitor
+	}
+	if mac != "" {
+		for i := range m.groups {
+			g := &m.groups[i]
+			if !g.macs[mac] {
+				continue
+			}
+			if inDomainSet(host, g.allow) {
+				return decAllow
+			}
+			if inDomainSet(host, g.block) {
+				return decBlock
+			}
+			break // машина состоит максимум в одной группе
+		}
 	}
 	return decNone
 }

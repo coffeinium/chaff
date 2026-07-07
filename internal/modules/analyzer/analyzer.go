@@ -26,18 +26,18 @@ func init() {
 }
 
 type Flow struct {
-	SrcMAC  string `json:"src_mac"`
-	SrcIP   string `json:"src_ip"`
-	SrcHost string `json:"src_host,omitempty"`
-	Dst     string `json:"dst"`
-	DstIP   string `json:"dst_ip"`
-	Port    uint16 `json:"port"`
-	Proto   string `json:"proto"`
-	Kind    string `json:"kind"`
-	Packets uint64 `json:"packets"`
-	Bytes   uint64 `json:"bytes"`
-	First   int64  `json:"first"`
-	Last    int64  `json:"last"`
+	SrcMAC     string `json:"src_mac"`
+	SrcIP      string `json:"src_ip"`
+	SrcHost    string `json:"src_host,omitempty"`
+	Dst        string `json:"dst"`
+	DstIP      string `json:"dst_ip"`
+	Port       uint16 `json:"port"`
+	Proto      string `json:"proto"`
+	Kind       string `json:"kind"`
+	Packets    uint64 `json:"packets"`
+	Bytes      uint64 `json:"bytes"`
+	First      int64  `json:"first"`
+	Last       int64  `json:"last"`
 	Blocked    bool   `json:"blocked,omitempty"`
 	SrcBlocked bool   `json:"src_blocked,omitempty"`
 	Verdict    string `json:"verdict,omitempty"`

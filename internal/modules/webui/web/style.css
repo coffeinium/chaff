@@ -360,6 +360,7 @@ tbody tr.expand table { margin-top: 4px; }
 }
 .grp-body { padding: 10px 12px; }
 .grp-body .bar { margin-top: 12px; margin-bottom: 0; }
+.grp-body .subh { margin: 16px 0 8px; }
 
 .macw { display: inline-flex; gap: 6px; align-items: center; }
 .macw button { visibility: hidden; }

@@ -345,11 +345,11 @@ func registerGroupHandlers(k *kernel.Kernel, h map[string]ipc.Handler) {
 		if err := gate(); err != nil {
 			return ipc.Err(err.Error())
 		}
-		g, err := st.CreateGroup(req.Arg("name"), req.Arg("action"), req.Arg("note"))
+		g, err := st.CreateGroup(req.Arg("name"), req.Arg("note"))
 		if err != nil {
 			return ipc.Err(err.Error())
 		}
-		return ipc.OK(fmt.Sprintf("группа %q создана (действие: %s, выключена)", g.Name, g.Action))
+		return ipc.OK(fmt.Sprintf("группа %q создана (выключена)", g.Name))
 	}
 	h["group.rm"] = func(req ipc.Request) ipc.Response {
 		if err := gate(); err != nil {
@@ -383,17 +383,6 @@ func registerGroupHandlers(k *kernel.Kernel, h map[string]ipc.Handler) {
 		}
 		reload("group.disable")
 		return ipc.OK(fmt.Sprintf("группа %q выключена", g.Name))
-	}
-	h["group.action"] = func(req ipc.Request) ipc.Response {
-		if err := gate(); err != nil {
-			return ipc.Err(err.Error())
-		}
-		g, err := st.SetGroupAction(req.Arg("ref"), req.Arg("action"))
-		if err != nil {
-			return ipc.Err(err.Error())
-		}
-		reload("group.action")
-		return ipc.OK(fmt.Sprintf("действие группы %q: %s", g.Name, g.Action))
 	}
 	h["group.note"] = func(req ipc.Request) ipc.Response {
 		if err := gate(); err != nil {
@@ -431,12 +420,43 @@ func registerGroupHandlers(k *kernel.Kernel, h map[string]ipc.Handler) {
 		}
 		return ipc.OK(fmt.Sprintf("участник удалён из группы %q", g.Name))
 	}
+	h["group.rule.add"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, okMsg, err := st.AddGroupRule(req.Arg("ref"), req.Arg("value"), req.Arg("action"), req.Arg("note"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		if g.Enabled {
+			reload("group.rule.add")
+		}
+		return ipc.OK(okMsg)
+	}
+	h["group.rule.rm"] = func(req ipc.Request) ipc.Response {
+		if err := gate(); err != nil {
+			return ipc.Err(err.Error())
+		}
+		g, err := st.RemoveGroupRule(req.Arg("ref"), req.Arg("value"))
+		if err != nil {
+			return ipc.Err(err.Error())
+		}
+		if g.Enabled {
+			reload("group.rule.rm")
+		}
+		return ipc.OK(fmt.Sprintf("правило удалено из группы %q", g.Name))
+	}
 }
 
 func markVerdicts(k *kernel.Kernel, flows []analyzer.Flow) {
 	ipb, _ := runningModule(k, "ipblock").(interface{ Blocked(netip.Addr) bool })
 	mac, _ := runningModule(k, "macblock").(interface{ Blocked(string) bool })
-	sni, _ := runningModule(k, "sniblock").(interface{ Verdict(string) string })
+	sni, _ := runningModule(k, "sniblock").(interface {
+		Verdict(host, mac string) string
+	})
+	grp, _ := runningModule(k, "grouppolicy").(interface {
+		Blocked(mac string, ip netip.Addr) bool
+	})
 	for i := range flows {
 		f := &flows[i]
 		if mac != nil && f.SrcMAC != "" && mac.Blocked(f.SrcMAC) {
@@ -449,8 +469,14 @@ func markVerdicts(k *kernel.Kernel, flows []analyzer.Flow) {
 				continue
 			}
 		}
+		if grp != nil && f.SrcMAC != "" {
+			if a, err := netip.ParseAddr(f.DstIP); err == nil && grp.Blocked(f.SrcMAC, a) {
+				f.Verdict, f.Blocked = "block", true
+				continue
+			}
+		}
 		if sni != nil && f.Kind != "ip" {
-			if v := sni.Verdict(f.Dst); v != "" {
+			if v := sni.Verdict(f.Dst, f.SrcMAC); v != "" {
 				f.Verdict, f.Blocked = v, v == "block"
 			}
 		}

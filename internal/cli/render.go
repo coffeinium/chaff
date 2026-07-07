@@ -450,7 +450,7 @@ func renderGroup(data []map[string]any) {
 		if boolean(g["enabled"]) {
 			state = rOK.Render("вкл")
 		}
-		head := fmt.Sprintf("%s  %s  %s", rHdr.Render(str(g["name"])), action(str(g["action"])), state)
+		head := fmt.Sprintf("%s  %s", rHdr.Render(str(g["name"])), state)
 		if note := str(g["note"]); note != "" {
 			head += rDim.Render("  · " + note)
 		}
@@ -458,27 +458,39 @@ func renderGroup(data []map[string]any) {
 		members := rows(g["members"])
 		if len(members) == 0 {
 			empty("нет участников (chaff group add-member " + str(g["name"]) + " MAC|ХОСТ)")
+		} else {
+			var out [][]string
+			for _, m := range members {
+				macs := ""
+				if arr, ok := m["macs"].([]any); ok {
+					parts := make([]string, 0, len(arr))
+					for _, x := range arr {
+						parts = append(parts, str(x))
+					}
+					macs = strings.Join(parts, ", ")
+				}
+				resolved := rOK.Render("да")
+				if !boolean(m["resolved"]) {
+					resolved = rWarn.Render("ждёт")
+				}
+				out = append(out, []string{
+					str(m["value"]), str(m["kind"]), str(m["hostname"]), macs, resolved,
+				})
+			}
+			table([]string{"участник", "вид", "имя", "mac", "готов"}, out)
+		}
+		rules := rows(g["rules"])
+		if len(rules) == 0 {
+			empty("нет правил (chaff group block " + str(g["name"]) + " VALUE)")
 			continue
 		}
 		var out [][]string
-		for _, m := range members {
-			macs := ""
-			if arr, ok := m["macs"].([]any); ok {
-				parts := make([]string, 0, len(arr))
-				for _, x := range arr {
-					parts = append(parts, str(x))
-				}
-				macs = strings.Join(parts, ", ")
-			}
-			resolved := rOK.Render("да")
-			if !boolean(m["resolved"]) {
-				resolved = rWarn.Render("ждёт")
-			}
+		for _, r := range rules {
 			out = append(out, []string{
-				str(m["value"]), str(m["kind"]), str(m["hostname"]), macs, resolved,
+				str(r["value"]), str(r["kind"]), action(str(r["action"])), str(r["note"]),
 			})
 		}
-		table([]string{"участник", "вид", "имя", "mac", "готов"}, out)
+		table([]string{"правило", "вид", "действие", "причина"}, out)
 	}
 }
 

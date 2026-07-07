@@ -50,11 +50,14 @@ const usageText = `chaff, модульный IOC-файрволл (в разры
 
 группы (ОПАСНО, ЭКСПЕРИМЕНТ; chaff module enable grouppolicy):
   chaff group ls
-  chaff group add ИМЯ [--action block|allow] [--note ПРИЧИНА]
+  chaff group add ИМЯ [--note ПРИЧИНА]
   chaff group rm ИМЯ | enable ИМЯ | disable ИМЯ
-  chaff group action ИМЯ block|allow
   chaff group add-member ИМЯ MAC|ХОСТ | rm-member ИМЯ MAC|ХОСТ
+  chaff group block ИМЯ VALUE [--note ПРИЧИНА]   правило только для машин группы
+  chaff group allow ИМЯ VALUE [--note ПРИЧИНА]   исключение внутри группы
+  chaff group rm-rule ИМЯ VALUE
   chaff group scan                     кандидаты из сети (имя|mac)
+  глобальные правила (block/allow) всегда приоритетнее групповых
 
   --json к любой команде: вывод в JSON (для скриптов)
 `

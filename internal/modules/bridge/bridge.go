@@ -308,6 +308,13 @@ func (m *Module) buildRuleset(queueNum uint16) error {
 			&expr.Queue{Num: queueNum, Flag: expr.QueueFlagBypass},
 		}})
 	}
+
+	// Групповые политики: отдельная цепочка, наполняет модуль grouppolicy.
+	// Стоит в конце — глобальные правила выше всегда приоритетнее.
+	c.AddChain(&nftables.Chain{Name: dataplane.ChainGroups, Table: tbl})
+	c.AddRule(&nftables.Rule{Table: tbl, Chain: ch, Exprs: []expr.Any{
+		&expr.Verdict{Kind: expr.VerdictJump, Chain: dataplane.ChainGroups},
+	}})
 	return c.Flush()
 }
 

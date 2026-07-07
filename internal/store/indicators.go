@@ -165,14 +165,11 @@ func (s *Store) CountByKind() (map[model.Kind]int, error) {
 
 func (s *Store) BuildRuleset() (model.Ruleset, error) {
 	rs := model.Ruleset{Allow: model.AllowSet{Domains: map[string]bool{}}}
-	// MAC-решения с учётом источника: ручные (source_id=0) — «фундаментальные».
-	manualBlock := map[string]bool{}
-	manualAllow := map[string]bool{}
-	feedBlock := map[string]bool{}
-	feedAllow := map[string]bool{}
+	var blockMAC []string
+	allowMAC := map[string]bool{}
 
 	rows, err := s.db.Query(`
-		SELECT value, kind, action, scope, source_id
+		SELECT value, kind, action, scope
 		FROM indicators
 		WHERE enabled = 1
 		  AND kind IN ('ip','cidr','domain','url','mac')
@@ -183,8 +180,7 @@ func (s *Store) BuildRuleset() (model.Ruleset, error) {
 
 	for rows.Next() {
 		var value, kind, action, scope string
-		var sourceID int64
-		if err := rows.Scan(&value, &kind, &action, &scope, &sourceID); err != nil {
+		if err := rows.Scan(&value, &kind, &action, &scope); err != nil {
 			rows.Close()
 			return rs, err
 		}
@@ -203,20 +199,10 @@ func (s *Store) BuildRuleset() (model.Ruleset, error) {
 			}
 		case model.KindMAC:
 			v := model.NormalizeMAC(value)
-			manual := sourceID == ManualSourceID
-			switch model.Action(action) {
-			case model.ActionAllow:
-				if manual {
-					manualAllow[v] = true
-				} else {
-					feedAllow[v] = true
-				}
-			case model.ActionBlock:
-				if manual {
-					manualBlock[v] = true
-				} else {
-					feedBlock[v] = true
-				}
+			if model.Action(action) == model.ActionAllow {
+				allowMAC[v] = true
+			} else if model.Action(action) == model.ActionBlock {
+				blockMAC = append(blockMAC, v)
 			}
 		case model.KindDomain:
 			if model.Action(action) == model.ActionAllow {
@@ -243,61 +229,17 @@ func (s *Store) BuildRuleset() (model.Ruleset, error) {
 	// Закрываем rows явно: соединение с БД одно, а дальше идут новые запросы.
 	rows.Close()
 
-	gBlock, gAllow, active, err := s.GroupMACDecisions()
+	for _, v := range blockMAC {
+		if !allowMAC[v] {
+			rs.MACs = append(rs.MACs, v)
+		}
+	}
+	groups, err := s.GroupPolicies()
 	if err != nil {
 		return rs, err
 	}
-	rs.MACs = resolveMACBlocks(manualBlock, manualAllow, feedBlock, feedAllow, gBlock, gAllow, active)
+	rs.Groups = groups
 	return rs, nil
-}
-
-// resolveMACBlocks сводит MAC-решения по приоритету. Без активных групп сохраняется
-// прежняя семантика (любой allow перекрывает любой block). С активными группами
-// приоритет строгий: ручное правило > групповое > фид.
-func resolveMACBlocks(manualBlock, manualAllow, feedBlock, feedAllow, gBlock, gAllow map[string]bool, active bool) []string {
-	var out []string
-	if !active {
-		for v := range manualBlock {
-			if !manualAllow[v] && !feedAllow[v] {
-				out = append(out, v)
-			}
-		}
-		for v := range feedBlock {
-			if manualBlock[v] {
-				continue
-			}
-			if !manualAllow[v] && !feedAllow[v] {
-				out = append(out, v)
-			}
-		}
-		return out
-	}
-
-	keys := map[string]bool{}
-	for _, m := range []map[string]bool{manualBlock, manualAllow, feedBlock, feedAllow, gBlock, gAllow} {
-		for v := range m {
-			keys[v] = true
-		}
-	}
-	for v := range keys {
-		blocked := false
-		switch {
-		case manualBlock[v]:
-			blocked = true
-		case manualAllow[v]:
-			blocked = false
-		case gBlock[v]:
-			blocked = true
-		case gAllow[v]:
-			blocked = false
-		case feedBlock[v]:
-			blocked = true
-		}
-		if blocked {
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 func parsePrefix(v string) (netip.Prefix, bool) {

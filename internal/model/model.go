@@ -66,6 +66,19 @@ type Ruleset struct {
 	Domains []DomainRule
 	URLs    []URLRule
 	Allow   AllowSet
+	Groups  []GroupPolicy
+}
+
+// GroupPolicy — правила, действующие только на машины группы (по их MAC).
+// Глобальные правила всегда приоритетнее групповых.
+type GroupPolicy struct {
+	ID      int64
+	Name    string
+	MACs    []string
+	IPv4    []netip.Prefix
+	Domains []DomainRule
+	URLs    []URLRule
+	Allow   AllowSet
 }
 
 type DomainRule struct {

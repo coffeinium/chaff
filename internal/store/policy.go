@@ -11,16 +11,17 @@ import (
 	"github.com/coffeinium/chaff/internal/model"
 )
 
-// PolicyGroup — именованная группа машин с общей политикой (block/allow),
-// применяемой к её участникам, когда группа включена.
+// PolicyGroup — именованная группа машин со своими правилами (ip/cidr/домен/url),
+// которые применяются только к участникам, когда группа включена. Глобальные
+// правила (ручные и фиды) всегда приоритетнее групповых.
 type PolicyGroup struct {
 	ID        int64          `json:"id"`
 	Name      string         `json:"name"`
-	Action    model.Action   `json:"action"`
 	Enabled   bool           `json:"enabled"`
 	Note      string         `json:"note,omitempty"`
 	CreatedAt int64          `json:"created_at"`
 	Members   []PolicyMember `json:"members"`
+	Rules     []GroupRule    `json:"rules"`
 }
 
 // PolicyMember — участник группы: MAC-адрес или имя хоста (kind: mac|host).
@@ -32,6 +33,17 @@ type PolicyMember struct {
 	MACs     []string `json:"macs,omitempty"`
 	Hostname string   `json:"hostname,omitempty"`
 	Resolved bool     `json:"resolved"`
+}
+
+// GroupRule — правило группы, тот же вид, что глобальные индикаторы,
+// но действует только на участников группы.
+type GroupRule struct {
+	ID        int64        `json:"id"`
+	Value     string       `json:"value"`
+	Kind      model.Kind   `json:"kind"`
+	Action    model.Action `json:"action"`
+	Note      string       `json:"note,omitempty"`
+	CreatedAt int64        `json:"created_at"`
 }
 
 func normMemberKind(value string) (kind, norm string) {
@@ -68,61 +80,15 @@ func resolveMemberMACs(kind, value string, hostMACs map[string][]string) []strin
 	return hostMACs[strings.ToLower(value)]
 }
 
-// manualMACRules возвращает ручные (source_id=0) MAC-правила — «фундаментальные»
-// правила, с которыми групповым запрещено конфликтовать.
-func (s *Store) manualMACRules() (map[string]model.Action, error) {
-	rows, err := s.db.Query(
-		`SELECT value, action FROM indicators WHERE source_id = ? AND kind = 'mac' AND enabled = 1`,
-		ManualSourceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]model.Action{}
-	for rows.Next() {
-		var value, action string
-		if err := rows.Scan(&value, &action); err != nil {
-			return nil, err
-		}
-		out[model.NormalizeMAC(value)] = model.Action(action)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) checkFundamentalConflict(macs []string, action model.Action) error {
-	if len(macs) == 0 {
-		return nil
-	}
-	rules, err := s.manualMACRules()
-	if err != nil {
-		return err
-	}
-	for _, mc := range macs {
-		a, ok := rules[mc]
-		if !ok {
-			continue
-		}
-		if (action == model.ActionBlock && a == model.ActionAllow) ||
-			(action == model.ActionAllow && a == model.ActionBlock) {
-			return fmt.Errorf(
-				"конфликт с фундаментальным правилом: MAC %s вручную помечен как %s, групповое правило %s запрещено",
-				mc, a, action)
-		}
-	}
-	return nil
-}
-
-// macsClaimedByOthers: MAC -> имя чужой группы (кроме exceptID), с учётом
-// разрешения host-участников в MAC-адреса.
-func (s *Store) macsClaimedByOthers(exceptID int64) (map[string]string, error) {
+// MemberMachineIndex: MAC -> имя группы, по всем группам (для пометки кандидатов).
+func (s *Store) MemberMachineIndex() (map[string]string, error) {
 	hostMACs, err := s.hostToMACs()
 	if err != nil {
 		return nil, err
 	}
 	rows, err := s.db.Query(`
 		SELECT g.name, m.kind, m.value
-		FROM policy_members m JOIN policy_groups g ON g.id = m.group_id
-		WHERE m.group_id <> ?`, exceptID)
+		FROM policy_members m JOIN policy_groups g ON g.id = m.group_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -140,33 +106,26 @@ func (s *Store) macsClaimedByOthers(exceptID int64) (map[string]string, error) {
 	return out, rows.Err()
 }
 
-// MemberMachineIndex: MAC -> имя группы, по всем группам (для пометки кандидатов).
-func (s *Store) MemberMachineIndex() (map[string]string, error) {
-	return s.macsClaimedByOthers(0)
-}
-
 func (s *Store) GetGroup(ref string) (PolicyGroup, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return PolicyGroup{}, errors.New("нужно имя или id группы")
 	}
-	q := `SELECT id, name, action, enabled, note, created_at FROM policy_groups WHERE name = ?`
+	q := `SELECT id, name, enabled, note, created_at FROM policy_groups WHERE name = ?`
 	arg := any(ref)
 	if id, err := strconv.ParseInt(ref, 10, 64); err == nil {
-		q = `SELECT id, name, action, enabled, note, created_at FROM policy_groups WHERE id = ?`
+		q = `SELECT id, name, enabled, note, created_at FROM policy_groups WHERE id = ?`
 		arg = id
 	}
 	var g PolicyGroup
-	var action string
 	var enabled int
-	err := s.db.QueryRow(q, arg).Scan(&g.ID, &g.Name, &action, &enabled, &g.Note, &g.CreatedAt)
+	err := s.db.QueryRow(q, arg).Scan(&g.ID, &g.Name, &enabled, &g.Note, &g.CreatedAt)
 	if err == sql.ErrNoRows {
 		return PolicyGroup{}, fmt.Errorf("группа %q не найдена", ref)
 	}
 	if err != nil {
 		return PolicyGroup{}, err
 	}
-	g.Action = model.Action(action)
 	g.Enabled = enabled != 0
 	return g, nil
 }
@@ -196,22 +155,42 @@ func (s *Store) membersOf(groupID int64, hostMACs map[string][]string, byMAC map
 	return out, rows.Err()
 }
 
+func (s *Store) rulesOf(groupID int64) ([]GroupRule, error) {
+	rows, err := s.db.Query(`
+		SELECT id, value, kind, action, note, created_at
+		FROM policy_rules WHERE group_id = ? ORDER BY kind, value`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GroupRule
+	for rows.Next() {
+		var r GroupRule
+		var kind, action string
+		if err := rows.Scan(&r.ID, &r.Value, &kind, &action, &r.Note, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.Kind = model.Kind(kind)
+		r.Action = model.Action(action)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ListGroups() ([]PolicyGroup, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, action, enabled, note, created_at FROM policy_groups ORDER BY name`)
+		`SELECT id, name, enabled, note, created_at FROM policy_groups ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	var groups []PolicyGroup
 	for rows.Next() {
 		var g PolicyGroup
-		var action string
 		var enabled int
-		if err := rows.Scan(&g.ID, &g.Name, &action, &enabled, &g.Note, &g.CreatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &enabled, &g.Note, &g.CreatedAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		g.Action = model.Action(action)
 		g.Enabled = enabled != 0
 		groups = append(groups, g)
 	}
@@ -234,22 +213,23 @@ func (s *Store) ListGroups() ([]PolicyGroup, error) {
 			return nil, err
 		}
 		groups[i].Members = mem
+		rules, err := s.rulesOf(groups[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		groups[i].Rules = rules
 	}
 	return groups, nil
 }
 
-func (s *Store) CreateGroup(name, action, note string) (PolicyGroup, error) {
+func (s *Store) CreateGroup(name, note string) (PolicyGroup, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return PolicyGroup{}, errors.New("нужно имя группы")
 	}
-	act, err := normAction(action)
-	if err != nil {
-		return PolicyGroup{}, err
-	}
 	res, err := s.db.Exec(
-		`INSERT INTO policy_groups (name, action, enabled, note, created_at) VALUES (?, ?, 0, ?, ?)`,
-		name, string(act), strings.TrimSpace(note), time.Now().Unix())
+		`INSERT INTO policy_groups (name, enabled, note, created_at) VALUES (?, 0, ?, ?)`,
+		name, strings.TrimSpace(note), time.Now().Unix())
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return PolicyGroup{}, fmt.Errorf("группа %q уже существует", name)
@@ -257,17 +237,7 @@ func (s *Store) CreateGroup(name, action, note string) (PolicyGroup, error) {
 		return PolicyGroup{}, err
 	}
 	id, _ := res.LastInsertId()
-	return PolicyGroup{ID: id, Name: name, Action: act, Note: strings.TrimSpace(note)}, nil
-}
-
-func normAction(action string) (model.Action, error) {
-	switch model.Action(strings.ToLower(strings.TrimSpace(action))) {
-	case model.ActionBlock, "":
-		return model.ActionBlock, nil
-	case model.ActionAllow:
-		return model.ActionAllow, nil
-	}
-	return "", fmt.Errorf("действие должно быть block или allow, а не %q", action)
+	return PolicyGroup{ID: id, Name: name, Note: strings.TrimSpace(note)}, nil
 }
 
 func (s *Store) DeleteGroup(ref string) (string, error) {
@@ -308,44 +278,6 @@ func (s *Store) SetGroupNote(ref, note string) (PolicyGroup, error) {
 	return g, nil
 }
 
-func (s *Store) SetGroupAction(ref, action string) (PolicyGroup, error) {
-	g, err := s.GetGroup(ref)
-	if err != nil {
-		return PolicyGroup{}, err
-	}
-	act, err := normAction(action)
-	if err != nil {
-		return PolicyGroup{}, err
-	}
-	// Смена действия не должна порождать конфликт с фундаментальными правилами.
-	hostMACs, err := s.hostToMACs()
-	if err != nil {
-		return PolicyGroup{}, err
-	}
-	rows, err := s.db.Query(`SELECT kind, value FROM policy_members WHERE group_id = ?`, g.ID)
-	if err != nil {
-		return PolicyGroup{}, err
-	}
-	var macs []string
-	for rows.Next() {
-		var kind, value string
-		if err := rows.Scan(&kind, &value); err != nil {
-			rows.Close()
-			return PolicyGroup{}, err
-		}
-		macs = append(macs, resolveMemberMACs(kind, value, hostMACs)...)
-	}
-	rows.Close()
-	if err := s.checkFundamentalConflict(macs, act); err != nil {
-		return PolicyGroup{}, err
-	}
-	if _, err := s.db.Exec(`UPDATE policy_groups SET action = ? WHERE id = ?`, string(act), g.ID); err != nil {
-		return PolicyGroup{}, err
-	}
-	g.Action = act
-	return g, nil
-}
-
 func (s *Store) AddGroupMember(ref, value string) (PolicyGroup, string, error) {
 	g, err := s.GetGroup(ref)
 	if err != nil {
@@ -365,25 +297,6 @@ func (s *Store) AddGroupMember(ref, value string) (PolicyGroup, string, error) {
 	}
 	if err != sql.ErrNoRows {
 		return PolicyGroup{}, "", err
-	}
-
-	hostMACs, err := s.hostToMACs()
-	if err != nil {
-		return PolicyGroup{}, "", err
-	}
-	macs := resolveMemberMACs(kind, norm, hostMACs)
-
-	if err := s.checkFundamentalConflict(macs, g.Action); err != nil {
-		return PolicyGroup{}, "", err
-	}
-	claimed, err := s.macsClaimedByOthers(g.ID)
-	if err != nil {
-		return PolicyGroup{}, "", err
-	}
-	for _, mc := range macs {
-		if other, ok := claimed[mc]; ok {
-			return PolicyGroup{}, "", fmt.Errorf("машина %s уже состоит в группе %q", mc, other)
-		}
 	}
 
 	if _, err := s.db.Exec(
@@ -410,43 +323,158 @@ func (s *Store) RemoveGroupMember(ref, value string) (PolicyGroup, error) {
 	return g, nil
 }
 
-// GroupMACDecisions возвращает MAC-решения от включённых групп: множества block и
-// allow. active=false, если модуль выключен или включённых групповых правил нет —
-// в этом случае BuildRuleset сохраняет прежнее поведение.
-func (s *Store) GroupMACDecisions() (block, allow map[string]bool, active bool, err error) {
+func normRuleAction(action string) (model.Action, error) {
+	switch model.Action(strings.ToLower(strings.TrimSpace(action))) {
+	case model.ActionBlock, "":
+		return model.ActionBlock, nil
+	case model.ActionAllow:
+		return model.ActionAllow, nil
+	}
+	return "", fmt.Errorf("действие должно быть block или allow, а не %q", action)
+}
+
+func (s *Store) AddGroupRule(ref, value, action, note string) (PolicyGroup, string, error) {
+	g, err := s.GetGroup(ref)
+	if err != nil {
+		return PolicyGroup{}, "", err
+	}
+	value = strings.TrimSpace(value)
+	kind := model.Classify(value)
+	switch kind {
+	case model.KindUnknown:
+		return PolicyGroup{}, "", errors.New("не распознан вид значения (ip/cidr/домен/url)")
+	case model.KindMAC:
+		return PolicyGroup{}, "", errors.New("MAC блокируется целиком глобальным правилом (chaff block add MAC), в группе поддерживаются ip/cidr/домен/url")
+	}
+	act, err := normRuleAction(action)
+	if err != nil {
+		return PolicyGroup{}, "", err
+	}
+	now := time.Now().Unix()
+	if _, err := s.db.Exec(`
+		INSERT INTO policy_rules (group_id, value, kind, action, scope, note, created_at)
+		VALUES (?, ?, ?, ?, 'domain', ?, ?)
+		ON CONFLICT(group_id, value, kind) DO UPDATE SET
+			action = excluded.action,
+			note   = CASE WHEN excluded.note <> '' THEN excluded.note ELSE note END`,
+		g.ID, value, string(kind), string(act), strings.TrimSpace(note), now); err != nil {
+		return PolicyGroup{}, "", err
+	}
+	return g, fmt.Sprintf("в группу %q добавлено правило %s %q", g.Name, act, value), nil
+}
+
+func (s *Store) RemoveGroupRule(ref, value string) (PolicyGroup, error) {
+	g, err := s.GetGroup(ref)
+	if err != nil {
+		return PolicyGroup{}, err
+	}
+	res, err := s.db.Exec(
+		`DELETE FROM policy_rules WHERE group_id = ? AND value = ?`, g.ID, strings.TrimSpace(value))
+	if err != nil {
+		return PolicyGroup{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return PolicyGroup{}, fmt.Errorf("правило %q не найдено в группе %q", value, g.Name)
+	}
+	return g, nil
+}
+
+// GroupPolicies собирает включённые группы с правилами для Ruleset.
+// Пусто, если модуль grouppolicy выключен — тогда поведение как без групп.
+func (s *Store) GroupPolicies() ([]model.GroupPolicy, error) {
 	if !s.IsModuleEnabled("grouppolicy") {
-		return nil, nil, false, nil
+		return nil, nil
 	}
 	hostMACs, err := s.hostToMACs()
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
-	rows, err := s.db.Query(`
-		SELECT g.action, m.kind, m.value
-		FROM policy_members m JOIN policy_groups g ON g.id = m.group_id
-		WHERE g.enabled = 1`)
+
+	rows, err := s.db.Query(`SELECT id, name FROM policy_groups WHERE enabled = 1 ORDER BY id`)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
-	defer rows.Close()
-	block, allow = map[string]bool{}, map[string]bool{}
-	has := false
+	type grp struct {
+		id   int64
+		name string
+	}
+	var enabled []grp
 	for rows.Next() {
-		var action, kind, value string
-		if err := rows.Scan(&action, &kind, &value); err != nil {
-			return nil, nil, false, err
+		var g grp
+		if err := rows.Scan(&g.id, &g.name); err != nil {
+			rows.Close()
+			return nil, err
 		}
-		dst := block
-		if model.Action(action) == model.ActionAllow {
-			dst = allow
-		}
-		for _, mc := range resolveMemberMACs(kind, value, hostMACs) {
-			dst[mc] = true
-			has = true
-		}
+		enabled = append(enabled, g)
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
-	return block, allow, has, nil
+
+	var out []model.GroupPolicy
+	for _, g := range enabled {
+		gp := model.GroupPolicy{ID: g.id, Name: g.name, Allow: model.AllowSet{Domains: map[string]bool{}}}
+
+		mrows, err := s.db.Query(`SELECT kind, value FROM policy_members WHERE group_id = ?`, g.id)
+		if err != nil {
+			return nil, err
+		}
+		seen := map[string]bool{}
+		for mrows.Next() {
+			var kind, value string
+			if err := mrows.Scan(&kind, &value); err != nil {
+				mrows.Close()
+				return nil, err
+			}
+			for _, mc := range resolveMemberMACs(kind, value, hostMACs) {
+				if !seen[mc] {
+					seen[mc] = true
+					gp.MACs = append(gp.MACs, mc)
+				}
+			}
+		}
+		mrows.Close()
+		if err := mrows.Err(); err != nil {
+			return nil, err
+		}
+
+		rules, err := s.rulesOf(g.id)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rules {
+			switch r.Kind {
+			case model.KindIP, model.KindCIDR:
+				p, ok := parsePrefix(r.Value)
+				if !ok {
+					continue
+				}
+				if r.Action == model.ActionAllow {
+					gp.Allow.IPs = append(gp.Allow.IPs, p)
+				} else if p.Addr().Is4() {
+					gp.IPv4 = append(gp.IPv4, p)
+				}
+			case model.KindDomain:
+				if r.Action == model.ActionAllow {
+					gp.Allow.Domains[r.Value] = true
+					continue
+				}
+				gp.Domains = append(gp.Domains, model.DomainRule{
+					Domain: r.Value, Scope: model.ScopeDomain, Action: r.Action,
+				})
+			case model.KindURL:
+				if r.Action == model.ActionAllow {
+					continue
+				}
+				gp.URLs = append(gp.URLs, model.URLRule{URL: r.Value, Action: r.Action})
+			}
+		}
+
+		if len(gp.MACs) == 0 {
+			continue // участники ещё не выучены — применять не к кому
+		}
+		out = append(out, gp)
+	}
+	return out, nil
 }

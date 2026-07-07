@@ -707,9 +707,9 @@ async function viewGroups() {
 
   v.append(h("div", { class: "warnbox" },
     h("b", null, "Опасный экспериментальный функционал. "),
-    "Группы блокируют/разблокируют машины по MAC или имени хоста. ",
-    "Приоритет: ручные (фундаментальные) правила → групповые → списки-фиды. ",
-    "Ручные блокировки всегда перевешивают, конфликтующее с ними правило создать нельзя. ",
+    "Группа — набор машин (по MAC или имени хоста) со своими правилами (ip/cidr/домен/url), ",
+    "которые действуют только на участников группы. ",
+    "Глобальные правила (вкладка «Правила» и фиды) всегда приоритетнее групповых. ",
     "Одна машина может состоять только в одной группе."));
 
   let groups, cands;
@@ -733,15 +733,12 @@ async function viewGroups() {
   v.append(dl);
 
   const nameI = h("input", { placeholder: "имя группы" });
-  const actI = h("select", null,
-    h("option", { value: "block", text: "block" }),
-    h("option", { value: "allow", text: "allow" }));
   const noteI = h("input", { placeholder: "заметка (необязательно)" });
-  v.append(h("div", { class: "bar" }, nameI, actI, noteI,
+  v.append(h("div", { class: "bar" }, nameI, noteI,
     h("button", {
       text: "создать группу",
       onclick: () => run(async () => {
-        const r = await api("group.add", { name: nameI.value.trim(), action: actI.value, note: noteI.value.trim() });
+        const r = await api("group.add", { name: nameI.value.trim(), note: noteI.value.trim() });
         nameI.value = ""; noteI.value = "";
         return r;
       }),
@@ -766,15 +763,9 @@ function groupCard(g) {
   const box = h("div", { class: "grp" });
   box.append(h("div", { class: "grp-head" },
     h("b", { text: g.name }),
-    actionTag(g.action),
     g.enabled ? h("span", { class: "on", text: "включена" }) : h("span", { class: "offc", text: "выключена" }),
     g.note ? h("span", { class: "dim", text: "· " + g.note }) : null,
     h("span", { class: "spacer" }),
-    h("button", {
-      class: "sm", text: g.action === "block" ? "→ allow" : "→ block",
-      title: "сменить действие группы",
-      onclick: () => run(() => api("group.action", { ref: String(g.id), action: g.action === "block" ? "allow" : "block" })),
-    }),
     h("button", {
       class: "sm " + (g.enabled ? "mut" : ""), text: g.enabled ? "выключить" : "включить",
       onclick: () => run(() => api(g.enabled ? "group.disable" : "group.enable", { ref: String(g.id) })),
@@ -812,6 +803,36 @@ function groupCard(g) {
   memI.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
   body.append(h("div", { class: "bar" }, memI,
     h("button", { class: "sm", text: "добавить участника", onclick: add })));
+
+  const rules = g.rules || [];
+  body.append(h("h4", { class: "subh", text: "правила группы" }));
+  if (rules.length) {
+    body.append(tableEl(["значение", "тип", "действие", "причина", ""], rules.map((r) =>
+      h("tr", null,
+        h("td", { text: r.value }),
+        h("td", null, h("span", { class: "tag", text: r.kind || "" })),
+        h("td", null, actionTag(r.action)),
+        h("td", { class: "dim", text: r.note || "" }),
+        h("td", null, h("button", {
+          class: "sm mut", text: "убрать",
+          onclick: () => run(() => api("group.rule.rm", { ref: String(g.id), value: r.value })),
+        })),
+      ))));
+  } else {
+    body.append(h("p", { class: "dim", text: "нет правил — группа пока ничего не блокирует" }));
+  }
+
+  const rval = h("input", { placeholder: "ip/cidr/домен/url" });
+  const rnote = h("input", { placeholder: "причина (необязательно)" });
+  const addRule = (action) => run(async () => {
+    const r = await api("group.rule.add", { ref: String(g.id), value: rval.value.trim(), action, note: rnote.value.trim() });
+    rval.value = ""; rnote.value = "";
+    return r;
+  });
+  rval.addEventListener("keydown", (e) => { if (e.key === "Enter") addRule("block"); });
+  body.append(h("div", { class: "bar" }, rval, rnote,
+    h("button", { class: "sm danger", text: "block", onclick: () => addRule("block") }),
+    h("button", { class: "sm", text: "allow", onclick: () => addRule("allow") })));
 
   box.append(body);
   return box;
