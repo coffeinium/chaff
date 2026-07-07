@@ -3,7 +3,6 @@ package analyzer
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/netip"
 	"sort"
 	"sync"
@@ -183,7 +182,7 @@ func (m *Module) handle(frame []byte) {
 	if !ok {
 		return
 	}
-	src := srcMAC(frame)
+	src := dpi.SrcMAC(frame)
 	now := time.Now().Unix()
 
 	a := netip.AddrPortFrom(p.SrcAddr, p.SrcPort)
@@ -303,13 +302,6 @@ func flowKey(a, b netip.AddrPort, proto uint8) string {
 		x, y = y, x
 	}
 	return string(rune(proto)) + x + "|" + y
-}
-
-func srcMAC(frame []byte) string {
-	if len(frame) >= 14 && frame[0]>>4 != 4 && frame[0]>>4 != 6 {
-		return net.HardwareAddr(frame[6:12]).String()
-	}
-	return ""
 }
 
 func protoName(p uint8) string {

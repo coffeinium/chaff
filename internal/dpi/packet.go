@@ -1,6 +1,7 @@
 package dpi
 
 import (
+	"net"
 	"net/netip"
 	"strings"
 )
@@ -96,6 +97,15 @@ func parseL4(p Packet, l4 []byte) (Packet, bool) {
 		return p, true
 	}
 	return p, false
+}
+
+// SrcMAC возвращает MAC источника, если кадр содержит ethernet-заголовок
+// (иначе пусто — данные начинаются сразу с IP).
+func SrcMAC(raw []byte) string {
+	if len(raw) >= 14 && raw[0]>>4 != 4 && raw[0]>>4 != 6 {
+		return net.HardwareAddr(raw[6:12]).String()
+	}
+	return ""
 }
 
 func NormalizeHost(h string) string {

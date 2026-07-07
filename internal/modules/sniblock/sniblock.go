@@ -194,10 +194,14 @@ func (m *Module) hook(a nfqueue.Attribute) int {
 	return 0
 }
 
-// srcMAC достаёт MAC источника из метаданных NFQUEUE (для групповых правил).
+// srcMAC достаёт MAC источника для групповых правил: из метаданных NFQUEUE,
+// а если ядро их не дало — из ethernet-заголовка в самом кадре.
 func srcMAC(a nfqueue.Attribute) string {
 	if a.HwAddr != nil && len(*a.HwAddr) >= 6 {
 		return net.HardwareAddr((*a.HwAddr)[:6]).String()
+	}
+	if a.Payload != nil {
+		return dpi.SrcMAC(*a.Payload)
 	}
 	return ""
 }
