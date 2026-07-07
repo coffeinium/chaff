@@ -416,7 +416,7 @@ func renderTokens(toks []map[string]any) {
 
 func dangerBanner() {
 	fmt.Println(rOff.Render("ОПАСНЫЙ ЭКСПЕРИМЕНТАЛЬНЫЙ ФУНКЦИОНАЛ") +
-		rDim.Render(" · ручные блокировки в приоритете, машина — только в одной группе"))
+		rDim.Render(" · глобальные правила в приоритете, машина — только в одной группе"))
 }
 
 func renderGroup(data []map[string]any) {
